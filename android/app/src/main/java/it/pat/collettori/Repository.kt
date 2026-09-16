@@ -24,13 +24,28 @@ class Repository(val context:Context){
     val db=Room.databaseBuilder(context,LocalDatabase::class.java,"pilot-v1.db").build()
     val dao=db.dao();val store=SessionStore(context);val api=Api(store)
     private val syncLock=Mutex()
+    suspend fun prepareDemo(){
+        check(BuildConfig.DEMO)
+        val bytes=context.assets.open("demo-package.json").use{it.readBytes()}
+        val p=JSONObject(String(bytes,Charsets.UTF_8))
+        check(p.getBoolean("synthetic"))
+        val rule=JSONObject(context.assets.open("gps-rule.json").bufferedReader().use{it.readText()})
+        val hash=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
+        db.withTransaction{
+            if(dao.pack(DemoMode.owner,p.getString("version"))==null)
+                dao.install(OfflinePackage(DemoMode.owner,p.getString("version"),p.getString("area_id"),String(bytes,Charsets.UTF_8),hash,bytes.size.toLong(),"2026-09-16T00:00:00Z",true))
+            dao.setting(Setting(DemoMode.owner,"catalog",DemoMode.catalog(rule).toString()))
+        }
+        store.save(DemoMode.session())
+    }
     fun owner():String {val s=store.get()?:error("Accesso richiesto");return s.getString("base")+"#"+s.getString("user_id")}
-    private fun requireOffline(){val s=store.get()?:error("Accesso richiesto");check(store.offlineAllowed(s)){"Abilitazione offline scaduta o orologio incoerente: rinnovare online. Dati conservati."}}
+    private fun requireOffline(){val s=store.get()?:error("Accesso richiesto");if(BuildConfig.DEMO){check(owner()==DemoMode.owner);return};check(store.offlineAllowed(s)){"Abilitazione offline scaduta o orologio incoerente: rinnovare online. Dati conservati."}}
     fun checkOffline(){requireOffline()}
     suspend fun catalog():JSONObject {val owner=owner();val c=JSONObject(String(api.request("/api/catalog",expectedOwner=owner)));dao.setting(Setting(owner,"catalog",c.toString()));return c}
     suspend fun localCatalog():JSONObject?=dao.settingValue(owner(),"catalog")?.let(::JSONObject)
     suspend fun recoveryBundle():String{
         val account=owner()
+        if(BuildConfig.DEMO)return DemoMode.export(dao.visitsNow(account).map{JSONObject(it.body)}).toString(2)
         return JSONObject().put("format","collettori-recovery-1").put("created_at",Instant.now().toString())
             .put("operations",JSONArray(dao.allPending(account).map{JSONObject(it.body)}))
             .put("drafts",JSONArray(dao.visitsNow(account).filter{it.operational=="BOZZA"}.map{JSONObject(it.body)})).toString(2)
@@ -103,19 +118,20 @@ class Repository(val context:Context){
         body.put("status",status)
         if(body.getInt("revision")==1)body.put("completed_at",Instant.now().toString())else body.put("revised_at",Instant.now().toString())
         val operation=JSONObject().put("operation_id",UUID.randomUUID().toString()).put("inspection",body)
-        val next=current.copy(body=body.toString(),operational=status,sync="IN_ATTESA",error=null)
-        db.withTransaction{dao.save(next);dao.enqueue(Pending(operation.getString("operation_id"),account,id,body.getInt("revision"),operation.toString()))}
+        val next=current.copy(body=body.toString(),operational=status,sync=if(BuildConfig.DEMO)"DEMO_LOCALE" else "IN_ATTESA",error=null)
+        db.withTransaction{dao.save(next);if(!BuildConfig.DEMO)dao.enqueue(Pending(operation.getString("operation_id"),account,id,body.getInt("revision"),operation.toString()))}
         syncNow();return next
     }
     suspend fun revise(id:String):Visit{
         requireOffline();val account=owner();val old=dao.visit(id,account)?:error("Controllo assente")
-        check(old.sync=="RICEVUTO_SERVER"&&dao.pendingVisit(id).isEmpty()){"Sincronizzare la revisione precedente prima della correzione"}
+        check((old.sync=="RICEVUTO_SERVER"||(BuildConfig.DEMO&&old.sync=="DEMO_LOCALE"))&&dao.pendingVisit(id).isEmpty()){"Sincronizzare la revisione precedente prima della correzione"}
         dao.setting(Setting(account,"revision:$id:${JSONObject(old.body).getInt("revision")}",old.body))
         val p=JSONObject(old.body);p.put("revision",p.getInt("revision")+1).put("revision_reason","")
         val draft=old.copy(body=p.toString(),operational="BOZZA",sync="SALVATO_LOCALMENTE",receipt=null);dao.save(draft);return draft
     }
     suspend fun sync():Boolean=syncLock.withLock{syncInternal()}
     private suspend fun syncInternal():Boolean{
+        if(BuildConfig.DEMO)return true
         val account=owner()
         for(op in dao.pending(account)){
             if(owner()!=account)return false
@@ -137,8 +153,8 @@ class Repository(val context:Context){
         }
         return true
     }
-    fun syncNow(){WorkManager.getInstance(context).enqueueUniqueWork("send-current-account",ExistingWorkPolicy.KEEP,OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).setBackoffCriteria(BackoffPolicy.EXPONENTIAL,30,TimeUnit.SECONDS).build())}
-    fun schedule(){WorkManager.getInstance(context).enqueueUniquePeriodicWork("periodic-sync",ExistingPeriodicWorkPolicy.KEEP,PeriodicWorkRequestBuilder<SyncWorker>(15,TimeUnit.MINUTES).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build());syncNow()}
+    fun syncNow(){if(BuildConfig.DEMO)return;WorkManager.getInstance(context).enqueueUniqueWork("send-current-account",ExistingWorkPolicy.KEEP,OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).setBackoffCriteria(BackoffPolicy.EXPONENTIAL,30,TimeUnit.SECONDS).build())}
+    fun schedule(){if(BuildConfig.DEMO)return;WorkManager.getInstance(context).enqueueUniquePeriodicWork("periodic-sync",ExistingPeriodicWorkPolicy.KEEP,PeriodicWorkRequestBuilder<SyncWorker>(15,TimeUnit.MINUTES).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build());syncNow()}
     companion object{
         val observationKeys=listOf("cover","deposits","flow","walls","damage","closure","restored")
         fun defaultSheet():JSONObject=JSONObject().apply{

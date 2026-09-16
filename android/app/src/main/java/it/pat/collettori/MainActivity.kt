@@ -45,7 +45,7 @@ class MainActivity:ComponentActivity(){override fun onCreate(savedInstanceState:
 @Composable fun Field(label:String,value:String,onChange:(String)->Unit){OutlinedTextField(value=value,onValueChange=onChange,label={Text(label)},modifier=Modifier.fillMaxWidth().padding(vertical=4.dp))}
 fun shown(s:String?):String=try{DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss").withZone(ZoneId.of("Europe/Rome")).format(Instant.parse(s))}catch(e:Exception){s?:"—"}
 fun operational(s:String)=when(s){"BOZZA"->"Bozza";"COMPLETO"->"Controllo dichiarato completo";"PARZIALE"->"Parziale";else->"Impedito"}
-fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_ATTESA"->"In attesa di invio";"INVIO_IN_CORSO"->"Invio in corso";"RICEVUTO_SERVER"->"Ricevuto dal server";else->"Errore da risolvere"}
+fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nessun invio";"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_ATTESA"->"In attesa di invio";"INVIO_IN_CORSO"->"Invio in corso";"RICEVUTO_SERVER"->"Ricevuto dal server";else->"Errore da risolvere"}
 
 @Composable fun NetworkStatus():Boolean{
     val context=LocalContext.current
@@ -63,6 +63,15 @@ fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_A
     val busy=runningTasks>0
     val scope=rememberCoroutineScope()
     fun task(block:suspend()->Unit){scope.launch{runningTasks++;try{block()}catch(e:Exception){message=e.message?:"Operazione non riuscita"}finally{runningTasks--}}}
+    if(BuildConfig.DEMO && session==null){
+        LaunchedEffect(Unit){task{repo.prepareDemo();session=repo.store.get()}}
+        Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp)){
+            Text("Collettori Demo",style=MaterialTheme.typography.headlineLarge)
+            Text("Preparazione dei dati sintetici sul telefono…")
+            if(message.isNotBlank())Text(message)
+        }
+        return
+    }
     if(session==null){
         var base by remember{mutableStateOf(if(BuildConfig.DEBUG)"http://10.0.2.2:8000" else "https://")}
         var username by remember{mutableStateOf("")};var password by remember{mutableStateOf("")}
@@ -96,7 +105,7 @@ fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_A
         var recoveryText by remember{mutableStateOf("")}
         val exportRecovery=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->if(uri!=null)task{
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){repo.context.contentResolver.openOutputStream(uri)?.use{it.write(recoveryText.toByteArray(Charsets.UTF_8))}?:error("File non scrivibile")}
-            recoveryText="";message="Copia di recupero salvata. Contiene dati personali: consegnarla solo al referente autorizzato. La coda originale è conservata."
+            recoveryText="";message=if(BuildConfig.DEMO)"Esportazione demo salvata. Include eventuali coordinate GPS reali: condividila consapevolmente." else "Copia di recupero salvata. Contiene dati personali: consegnarla solo al referente autorizzato. La coda originale è conservata."
         }}
         val online=NetworkStatus()
         val latest=packs.distinctBy{it.area}
@@ -131,14 +140,14 @@ fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_A
         if(editor!=null){
             InspectionEditor(repo,editor!!,editorPoint,editorPack,busy,message,
                 onMessage={message=it},onBack={editor=null},onCapture={withPermission{task{capture(editor!!.id)}}},
-                onComplete={body,status->task{val v=repo.complete(editor!!.id,body,status);openEditor(v);message="Controllo salvato sul dispositivo, in attesa di invio"}},
+                onComplete={body,status->task{val v=repo.complete(editor!!.id,body,status);openEditor(v);message=if(BuildConfig.DEMO)"Controllo demo salvato solo sul telefono" else "Controllo salvato sul dispositivo, in attesa di invio"}},
                 onRevise={task{openEditor(repo.revise(editor!!.id));message="Revisione aperta; la versione precedente rimane conservata"}},
                 onHistory={task{val d=String(repo.api.request("/api/inspections/"+editor!!.id));repo.dao.setting(Setting(account,"history:"+editor!!.id,d));message="Storico server aggiornato"}})
         }else{
         Scaffold(bottomBar={NavigationBar{listOf("Mappa","Pozzetti","Controlli","Dati offline","Account").forEach{t->NavigationBarItem(selected=tab==t,onClick={tab=t},icon={Text(when(t){"Mappa"->"◉";"Pozzetti"->"▦";"Controlli"->"✓";"Dati offline"->"↓";else->"●"})},label={Text(t)})}}}){padding->
             Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding().padding(horizontal=16.dp)){
-                Text("Collettori PAT · 0.1",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.padding(top=12.dp))
-                Text((if(online)"Rete disponibile" else "Senza rete")+" · "+visits.count{it.operational!="BOZZA"&&it.sync!="RICEVUTO_SERVER"}+" controlli da inviare",style=MaterialTheme.typography.bodySmall)
+                Text(if(BuildConfig.DEMO)"Collettori DEMO · autonoma" else "Collettori PAT · 0.1",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.padding(top=12.dp))
+                Text(if(BuildConfig.DEMO)"Senza server · dati sintetici · salvataggio locale" else ((if(online)"Rete disponibile" else "Senza rete")+" · "+visits.count{it.operational!="BOZZA"&&it.sync!="RICEVUTO_SERVER"}+" controlli da inviare"),style=MaterialTheme.typography.bodySmall)
                 if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
                 if(message.isNotBlank()){Text(message,modifier=Modifier.padding(vertical=8.dp),style=MaterialTheme.typography.bodySmall);TextButton(onClick={message=""}){Text("Chiudi messaggio")}}
                 when(tab){
@@ -189,7 +198,7 @@ fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_A
                         }
                     }
                     "Controlli"->{
-                        Row{Button(onClick={repo.syncNow();message="Invio richiesto; l'esito comparirà dopo la ricevuta server"}){Text("Sincronizza ora")};if(selected!=null)TextButton(onClick={selected=null}){Text("Tutti")}}
+                        Row{if(!BuildConfig.DEMO)Button(onClick={repo.syncNow();message="Invio richiesto; l'esito comparirà dopo la ricevuta server"}){Text("Sincronizza ora")};if(selected!=null)TextButton(onClick={selected=null}){Text("Tutti")}}
                         LazyColumn{items(visits.filter{selected==null||it.manholeId==selected},key={it.id}){v->
                             Card(Modifier.fillMaxWidth().padding(vertical=5.dp)){Column(Modifier.padding(12.dp)){
                                 val b=JSONObject(v.body);Text(operational(v.operational),style=MaterialTheme.typography.titleMedium)
@@ -202,7 +211,11 @@ fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_A
                         }}
                     }
                     "Dati offline"->{
-                        Column(Modifier.verticalScroll(rememberScrollState())){
+                        if(BuildConfig.DEMO){
+                            Text("Cartografia sintetica inclusa: 16 pozzetti e 15 tratti. Nessun download richiesto.")
+                            Text("GPS reale su richiesta. I pozzetti demo sono nell'area di Trento: altrove l'esito può essere incompatibile. Motiva l'eccezione per provare la scheda.")
+                            Text("Bozze e controlli restano sul telefono anche riaprendo l'app. Nessun dato viene inviato a Supabase.")
+                        }else Column(Modifier.verticalScroll(rememberScrollState())){
                             Text("Prima dell'uscita",style=MaterialTheme.typography.titleLarge)
                             Text("Spazio libero: "+android.os.StatFs(repo.context.filesDir.path).availableBytes/1024/1024+" MB")
                             Text("Abilitazione offline fino a "+shown(repo.store.get()?.getString("offline_until")))
@@ -223,7 +236,16 @@ fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_A
                         }
                     }
                     "Account"->{
-                        Column(Modifier.verticalScroll(rememberScrollState())){
+                        if(BuildConfig.DEMO){
+                            Column(Modifier.verticalScroll(rememberScrollState())){
+                                Text("Demo autonoma",style=MaterialTheme.typography.headlineMedium)
+                                Text("Nessun account, password o server richiesti. Nessuna scadenza di sessione.")
+                                Text("Il GPS è reale e non viene simulato. I manufatti e la base sono sintetici: non usare per interventi.")
+                                Text("Questa app è separata da Collettori PAT: non modifica i controlli o gli account del pilota.")
+                                OutlinedButton(onClick={task{recoveryText=repo.recoveryBundle();exportRecovery.launch("collettori-demo.json")}}){Text("Esporta controlli demo")}
+                                Text("Disinstallare questa demo o cancellarne i dati elimina le prove locali.")
+                            }
+                        }else Column(Modifier.verticalScroll(rememberScrollState())){
                             Text(session!!.getString("username"),style=MaterialTheme.typography.headlineMedium);Text("Ruolo: "+session!!.getString("role"));Text("Server: "+session!!.getString("base"))
                             Text("Collettori PAT · versione 0.1 · build ${BuildConfig.VERSION_CODE}")
                             Text("L'app raccoglie la posizione soltanto su richiesta. Il GPS non verifica apertura o qualità del controllo.",modifier=Modifier.padding(vertical=16.dp))
@@ -255,6 +277,7 @@ fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_A
     fun changeBody(key:String,value:Any){val next=JSONObject(bodyText).put(key,value);bodyText=next.toString();scope.launch{lock.withLock{try{repo.saveDraft(visit.id,next);saveState="Bozza salvata sul dispositivo"}catch(e:Exception){saveState="Errore: "+e.message}}}}
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp).verticalScroll(rememberScrollState())){
         TextButton(onClick=onBack){Text("← Torna")}
+        if(BuildConfig.DEMO)Text("DEMO · scheda locale su dati sintetici",color=MaterialTheme.colorScheme.secondary)
         Text("Pozzetto "+(point?.getString("code")?:visit.manholeId),style=MaterialTheme.typography.headlineMedium)
         Text("Versione dati: "+visit.datasetId,style=MaterialTheme.typography.bodySmall)
         Text(operational(visit.operational)+" · "+syncLabel(visit.sync));Text("Revisione "+body.getInt("revision")+" · "+(visit.receipt?.let{JSONObject(it).optString("review")}?:"Non esaminata"))
@@ -276,7 +299,7 @@ fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_A
             Text("Scheda conservata",style=MaterialTheme.typography.titleLarge)
             sheet.keys().forEach{key->val value=sheet.opt(key);val shownValue=when(value){null,JSONObject.NULL->"Non indicato";true->"Sì";false->"No";else->value.toString()};Text("${fieldLabels[key]?:key}: $shownValue")}
             Text("Completamento: "+shown(body.optString("completed_at")))
-            if(visit.sync=="RICEVUTO_SERVER")Button(onClick=onRevise){Text("Crea revisione motivata")}
+            if(visit.sync=="RICEVUTO_SERVER"||(BuildConfig.DEMO&&visit.sync=="DEMO_LOCALE"))Button(onClick=onRevise){Text("Crea revisione motivata")}
             if(visit.sync=="RICEVUTO_SERVER")OutlinedButton(onClick=onHistory){Text("Aggiorna storico dal server")}
             history?.let{Text("Storico scaricato",style=MaterialTheme.typography.titleMedium);JSONObject(it).getJSONArray("revisions").objects().forEach{r->Text("Revisione ${r.getInt("number")} · ${r.getString("review")} · ${r.getString("reason")}")}}
             visit.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}

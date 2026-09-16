@@ -4,6 +4,9 @@ Applicazione Android e server per le **sole ispezioni dei collettori intercomuna
 
 ## Contenuto
 
+**Prova senza server:** è disponibile una [demo autonoma per telefono](docs/DEMO-TELEFONO.md),
+con APK separato, dati sintetici inclusi e nessun login.
+
 - Android Kotlin/Compose, Room, WorkManager, MapLibre Native; cinque schermate, ricerca, mappa locale, schede, bozze, eventi GPS, revisioni e invii persistenti.
 - FastAPI, SQLAlchemy, migrazione Alembic; PostgreSQL/PostGIS in Docker Compose. SQLite è disponibile **solo come ambiente locale di sviluppo e test**, non sostituisce il collaudo PostgreSQL.
 - Portale amministrativo HTML/JavaScript senza dipendenze frontend: ispezioni, verifica documentale, scadenze, anomalie, account, versioni GPS, emissioni XLSX/CSV/JSON e stampa.

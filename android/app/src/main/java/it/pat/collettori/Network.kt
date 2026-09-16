@@ -15,6 +15,7 @@ class Api(private val store:SessionStore){
     private val client=OkHttpClient.Builder().connectTimeout(20,java.util.concurrent.TimeUnit.SECONDS).readTimeout(60,java.util.concurrent.TimeUnit.SECONDS).build()
     companion object{val refreshLock=Mutex()}
     suspend fun raw(base:String,path:String,token:String?=null,body:JSONObject?=null):ByteArray=withContext(Dispatchers.IO){
+        check(!BuildConfig.DEMO){"La demo autonoma non comunica con server"}
         require(base.startsWith("https://")||(BuildConfig.DEBUG&&base.startsWith("http://"))){"HTTPS richiesto"}
         val request=Request.Builder().url(base.trimEnd('/')+path)
         if(token!=null)request.header("Authorization","Bearer $token")

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1-demo — prova autonoma Android
+
+- APK separato Collettori Demo, senza login, server, scadenza sessione o permesso Internet.
+- 16 pozzetti e 15 tratti sintetici inclusi, mappa locale, GPS reale e schede persistenti.
+- Revisione locale ed esportazione demo distinta dai recuperi operativi; nessun invio o ricevuta server.
+
 ## 0.1 — pilota iniziale
 
 - Migrazione SQL Supabase in schema privato, ruolo backend dedicato, RLS e configurazione Direct/Session pooler.

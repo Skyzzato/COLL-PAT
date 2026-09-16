@@ -8,7 +8,7 @@
 | Migrazione Alembic su database locale vuoto | Eseguita con successo |
 | Importazione di 12.500 punti sintetici | Passata; UUID distinti, numeri ripetuti tra collettori ammessi |
 | Regola GPS Python | 18 casi condivisi, soglie esatte, permessi, g sconosciuta, simulazione, assenza/vecchiaia della misura |
-| Regola/stile Kotlin JVM | **3 test passati**, comprendono gli stessi 18 casi e distanza numerica comune |
+| Regola/stile e demo Kotlin JVM | **5 test passati per variante (debug e demo)**, comprendono gli stessi 18 casi GPS, distanza numerica, dataset locale e formato export demo |
 | Compilazione Android debug | **Riuscita**, versione 0.1, build 1 |
 | Compilazione APK dei test strumentali | Riuscita; non equivale all'esecuzione su dispositivo |
 | Manifest dell'APK tramite aapt | Assenti fotocamera, NFC, accesso a identificativi telefonici e localizzazione in background |
@@ -33,10 +33,19 @@ La suite Python segnala un avviso di deprecazione interno a Starlette/AnyIO rela
 SHA-256 dell'APK prodotto:
 
 ```text
-43902db6d65706bc510ee069436b6d829bb360d13f59337cfdf960b1048bc55e
+b9b09a3111edeb7038b5afe8afb786f8820654263b5df9bad3cb9decdee623a4
 ```
 
 È una build di debug firmata per sviluppo, non una distribuzione istituzionale approvata. Nessun deploy reale o attivazione di servizi a pagamento è stato eseguito. Il processo HTTP di collaudo viene arrestato dallo script al termine.
+
+### APK demo autonoma 0.1-demo
+
+Compilazione riuscita. Manifest dell'APK controllato con aapt: identificativo
+`it.pat.collettori.pilot.demo`, etichetta `Collettori Demo`, permesso INTERNET
+assente. Verificati nell'APK il dataset sintetico e tutti i font richiesti.
+SHA-256: `4c6b0ebfb6925699de41f5c7a606c8c50b0d714c464236dc3d4d3d40e7a01091`.
+Nessun telefono collegato: avvio, rendering e GPS della demo devono ancora essere
+provati sul dispositivo. I test JVM non sostituiscono questi controlli.
 
 ## Non eseguito / da verificare
 
