@@ -1,0 +1,20 @@
+[
+  {"name":"recent-compatible","d":5,"a":3,"age":1,"g":2,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"COMPATIBILE"},
+  {"name":"old","d":1,"a":1,"age":10.001,"g":1,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"NON_DISPONIBILE"},
+  {"name":"poor-accuracy-near","d":0,"a":100,"age":1,"g":1,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"INCERTA"},
+  {"name":"far","d":100,"a":3,"age":1,"g":2,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"NON_COMPATIBILE"},
+  {"name":"unknown-cartography","d":1,"a":1,"age":1,"g":null,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"INCERTA"},
+  {"name":"nearby-manhole","d":1,"a":1,"age":1,"g":1,"permission":"PRECISE","mock":false,"ambiguous":true,"error":null,"expected":"INCERTA"},
+  {"name":"denied","d":null,"a":null,"age":null,"g":1,"permission":"DENIED","mock":null,"ambiguous":false,"error":"permesso negato","expected":"NON_DISPONIBILE"},
+  {"name":"approximate","d":1,"a":1,"age":1,"g":1,"permission":"APPROXIMATE","mock":false,"ambiguous":false,"error":null,"expected":"INCERTA"},
+  {"name":"timeout","d":null,"a":null,"age":null,"g":1,"permission":"PRECISE","mock":null,"ambiguous":false,"error":"timeout","expected":"NON_DISPONIBILE"},
+  {"name":"mock","d":1,"a":1,"age":1,"g":1,"permission":"PRECISE","mock":true,"ambiguous":false,"error":null,"expected":"INCERTA"},
+  {"name":"exact-upper","d":15,"a":3,"age":10,"g":2,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"COMPATIBILE"},
+  {"name":"exact-lower","d":25,"a":3,"age":1,"g":2,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"INCERTA"},
+  {"name":"above-lower","d":25.001,"a":3,"age":1,"g":2,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"NON_COMPATIBILE"},
+  {"name":"accuracy-boundary","d":0,"a":15,"age":1,"g":2,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"COMPATIBILE"},
+  {"name":"map-boundary","d":0,"a":1,"age":1,"g":10,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"COMPATIBILE"},
+  {"name":"map-too-poor","d":0,"a":1,"age":1,"g":10.1,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"INCERTA"},
+  {"name":"missing-accuracy","d":0,"a":null,"age":1,"g":1,"permission":"PRECISE","mock":false,"ambiguous":false,"error":null,"expected":"INCERTA"},
+  {"name":"unknown-mock-flag-not-a-guarantee","d":1,"a":1,"age":1,"g":1,"permission":"PRECISE","mock":null,"ambiguous":false,"error":null,"expected":"COMPATIBILE"}
+]

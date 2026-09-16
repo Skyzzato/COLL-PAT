@@ -1,0 +1,33 @@
+name: Collaudo manuale pilota
+on: workflow_dispatch
+jobs:
+  backend-postgis:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5@sha256:94146ac37bc61e2322f88016056c5920729cb8c64c8542ed590af8fc2abdac07
+        env:
+          POSTGRES_PASSWORD: isolated-ci-test-password
+          POSTGRES_DB: pilot_tests
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 20
+    env:
+      POSTGIS_TEST_DATABASE_URL: postgresql+psycopg://postgres:isolated-ci-test-password@127.0.0.1:5432/pilot_tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements.lock
+      - run: python -m pytest -q
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - run: bash android/gradlew -p android :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest

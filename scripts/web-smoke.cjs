@@ -1,0 +1,47 @@
+const { chromium } = require(process.env.PLAYWRIGHT_PACKAGE || 'playwright');
+const path = require('path');
+(async () => {
+  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1360, height: 950 } });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto(process.env.SMOKE_BASE);
+    await page.locator('#username').fill('collaudo.web');
+    await page.locator('#password').fill(process.env.SMOKE_PASSWORD);
+    await page.getByRole('button', { name: 'Accedi', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('#deadlinePoint').options.length === 16);
+    await page.getByRole('button', { name: 'Apri', exact: true }).click();
+    await page.locator('#detail summary').first().click();
+    await page.getByPlaceholder('Nota di verifica documentale').fill('Verifica documentale SINTETICA via browser');
+    await page.getByRole('button', { name: 'Richiedi integrazione', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('#detail').textContent.includes('INTEGRAZIONE_RICHIESTA'));
+    await page.getByRole('button', { name: 'Scadenze e anomalie', exact: true }).click();
+    await page.screenshot({ path: path.join(process.env.SMOKE_OUTPUT, 'dashboard.png'), fullPage: true });
+    await page.getByRole('button', { name: 'Rapporti', exact: true }).click();
+    await page.locator('#quarter').selectOption('3');
+    const count = await page.locator('#reportList tr').count();
+    await page.getByRole('button', { name: 'Crea emissione', exact: true }).click();
+    await page.waitForFunction(n => document.querySelectorAll('#reportList tr').length > n, count);
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'XLSX', exact: true }).first().click();
+    const file = await download;
+    await file.saveAs(path.join(process.env.SMOKE_OUTPUT, 'report.xlsx'));
+    await page.getByRole('button', { name: 'Amministrazione', exact: true }).click();
+    await page.locator('#newUsername').fill('operaio.web.test');
+    await page.locator('#newPassword').fill('synthetic-test-password-123');
+    await page.getByRole('button', { name: 'Crea account', exact: true }).click();
+    await page.getByRole('cell', { name: 'operaio.web.test', exact: true }).waitFor();
+    const userRow = page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'operaio.web.test', exact: true }) });
+    await userRow.getByRole('button', { name: 'Ambiti', exact: true }).click();
+    await page.getByRole('dialog').getByRole('checkbox').uncheck();
+    await page.getByRole('button', { name: 'Salva ambiti', exact: true }).click();
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('#users tr')).some(r => r.cells[0].textContent === 'operaio.web.test' && r.cells[2].textContent === ''));
+    await userRow.getByRole('button', { name: 'Disabilita', exact: true }).click();
+    await userRow.getByRole('button', { name: 'Riabilita', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Esci', exact: true }).click();
+    await page.getByRole('button', { name: 'Accedi', exact: true }).waitFor();
+    if (errors.length) throw new Error(errors.join('\n'));
+    console.log('Browser headless: login, dashboard, creazione/download rapporto, creazione account, modifica ambiti, disabilitazione e logout OK.');
+  } finally { await browser.close(); }
+})().catch(e => { console.error(e.message); process.exit(1); });

@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgis/postgis:16-3.5@sha256:94146ac37bc61e2322f88016056c5920729cb8c64c8542ed590af8fc2abdac07
+    environment:
+      POSTGRES_DB: collettori
+      POSTGRES_USER: collettori
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Impostare POSTGRES_PASSWORD in .env}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U collettori -d collettori"]
+      interval: 5s
+      retries: 20
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://collettori:${POSTGRES_PASSWORD}@db/collettori
+      OFFLINE_HOURS: ${OFFLINE_HOURS:-72}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - files:/srv/runtime
+      - ./demo:/srv/demo:ro
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  database:
+  files:

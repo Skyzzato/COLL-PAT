@@ -1,0 +1,19 @@
+{
+  "area_id": "DEMO",
+  "synthetic": true,
+  "points": {
+    "file": "points",
+    "key": "KEY",
+    "code": "NUMBER",
+    "uncertainty": "MAP_ERR"
+  },
+  "segments": {
+    "file": "segments",
+    "key": "KEY",
+    "collector": "COLLECTOR",
+    "from": "START",
+    "to": "END"
+  },
+  "basemap": "basemap.geojson",
+  "attribution": "Dati e base interamente sintetici \u2014 Collettori PAT pilota. Nessun manufatto reale."
+}
