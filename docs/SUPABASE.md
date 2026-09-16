@@ -120,9 +120,19 @@ ambito locale: sincronizzare o esportare i controlli pendenti prima del cambio.
 ## Evidenza disponibile
 
 Test automatici di coerenza SQL/modello e configurazione della connessione
-inclusi in pytest. Nessuna connessione a un progetto Supabase reale è stata
-eseguita durante la preparazione: mancano progetto e credenziali. Il test SQL
-dei permessi e il collaudo end-to-end restano da eseguire sul progetto destinato.
+inclusi in pytest. Dopo l'applicazione della migrazione da parte dell'utente,
+il collegamento reale al progetto del pilota è stato verificato: ruolo backend,
+schema collettori, versione 0001 e funzioni PostGIS. FastAPI locale risponde
+con HTTP 200; un login inesistente viene rifiutato con 401. Creato il primo
+amministratore mediante inserimento privato della password da parte dell'utente.
+Importazione demo riuscita: 16 punti, 15 tratti, nessun errore o avviso.
+Il test SQL completo dei permessi e il collaudo Android end-to-end restano da eseguire.
+
+Su Windows sono disponibili anche `scripts/configure-supabase.ps1` e
+`scripts/create-admin.ps1`: finestre locali con campi password mascherati.
+La prima salva il `.env` escluso da Git; la seconda passa la password al processo
+Python attraverso stdin e riutilizza il bootstrap transazionale del backend.
+Nessuna password viene inserita negli argomenti dei processi o nel repository.
 
 Fonti ufficiali: [connessioni](https://supabase.com/docs/guides/database/connecting-to-postgres),
 [PostGIS](https://supabase.com/docs/guides/database/extensions/postgis),

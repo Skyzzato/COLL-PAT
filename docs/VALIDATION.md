@@ -16,7 +16,7 @@
 | Browser Edge headless sul server reale locale | Login, dashboard, dettaglio controllo e revisione documentale, creazione/download rapporto, creazione account, modifica ambiti, disabilitazione e logout verificati |
 | Controllo sintassi JavaScript e compilazione Python | Passati |
 | `pip check` | Nessuna incompatibilità dichiarata dalle dipendenze |
-| Preparazione Supabase | SQL coerente con il modello e gestione search_path verificate automaticamente; migrazione non applicata a un progetto reale |
+| Supabase reale, verifica successiva | Migrazione applicata dall'utente; connessione backend, schema, PostGIS, creazione amministratore e importazione di 16 punti/15 tratti sintetici riusciti. Test SQL completo dei permessi e prove Android ancora da eseguire |
 
 I test API coprono inoltre idempotenza dopo risposta persa, conflitti di contenuto, eventi non riutilizzabili tra visite, autorizzazioni e revoca, rinnovo del token, revisioni immutabili, recupero controllato con autore originale disabilitato, importazione senza CRS, aggiornamento dei codici senza cambiare lo storico, ritardi, anomalie/revisione documentale indipendenti, emissioni congelate e zeri iniziali in XLSX.
 
