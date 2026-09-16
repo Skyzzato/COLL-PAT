@@ -83,6 +83,29 @@ gestiscono automaticamente Supabase.
 
 ## 3. Verificare prima del pilota
 
+### Avvio guidato sul PC del pilota
+
+Per il progetto `zzipvrnhndigepufhkcj`, host Session pooler verificato nel pannello,
+è disponibile `scripts/supabase_local.py`. Dalla radice del repository:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\supabase_local.py configure
+.\.venv\Scripts\python.exe scripts\supabase_local.py check
+.\.venv\Scripts\python.exe scripts\supabase_local.py admin bootstrap --username nome.cognome --company "Impresa pilota sintetica" --area DEMO --area-name "Area sintetica" --synthetic
+.\.venv\Scripts\python.exe scripts\supabase_local.py admin import-gis ..\demo\synthetic.zip ..\demo\mapping.json
+.\.venv\Scripts\python.exe scripts\supabase_local.py serve
+```
+
+`configure` chiede la password del ruolo database due volte, in modo nascosto,
+e crea `.env` senza sovrascrivere un file esistente. Non cambia la password
+su Supabase: impostarla prima nel SQL Editor. `bootstrap` chiede separatamente
+la password dell'account amministratore dell'app. Non riutilizzare la password
+database. `check` legge soltanto schema e contatori; non modifica dati.
+
+Questo avvio funziona mentre il PC e il processo restano accesi. Per un telefono
+USB usare `adb reverse tcp:8000 tcp:8000` e l'URL `http://127.0.0.1:8000` nella
+build debug. Per l'uso fuori dal PC serve un server con HTTPS e disco persistente.
+
 Eseguire [`verify.sql`](../supabase/verify.sql) nel SQL Editor dopo la migrazione.
 Gli inserimenti di verifica vengono annullati con ROLLBACK. Poi verificare login,
 importazione GIS, download area, invio di un controllo, revisione e rapporti
