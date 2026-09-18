@@ -88,7 +88,7 @@ def main():
                     for row in db.execute(select(table)).mappings():
                         records.append({k:v for k,v in row.items() if k != "password_hash"})
                     archive.writestr(table.name+".json",canonical(records))
-                archive.writestr("README.txt","Collettori PAT 0.1. Esportazione JSON UTF-8: UUID e relazioni preservati. Dataset contengono coordinate WGS84 e versioni storiche. Nessuna password o token. Nessun allegato fotografico nella v0.1.")
+                archive.writestr("README.txt","Collettori PAT 0.11. Esportazione JSON UTF-8: UUID e relazioni preservati. Dataset contengono coordinate WGS84 e versioni storiche. Nessuna password o token. Allegati fotografici conservati localmente su Android, non inclusi in questo export server.")
             print("Esportazione creata:",target)
 
 if __name__ == "__main__": main()

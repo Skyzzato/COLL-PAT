@@ -32,12 +32,12 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-class MainActivity:ComponentActivity(){override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFF176B68),secondary=Color(0xFF9B641D),background=Color(0xFFF5F7F3))){Pilot((application as PilotApplication).repository)}}}}
+class MainActivity:ComponentActivity(){override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFF176B68),secondary=Color(0xFF9B641D),background=Color(0xFFF5F7F3))){if(BuildConfig.DEMO) DemoWorkspace((application as PilotApplication).repository) else Pilot((application as PilotApplication).repository)}}}}
 
 @Composable fun Choice(label:String,value:String,options:List<Pair<String,String>>,onChange:(String)->Unit){
     var open by remember{mutableStateOf(false)}
     Column(Modifier.fillMaxWidth().padding(vertical=4.dp)){
-        Text(label,style=MaterialTheme.typography.labelLarge)
+        Text(if(value=="ANOMALO")"⚠ $label · Anomalia" else label,style=MaterialTheme.typography.labelLarge,color=if(value=="ANOMALO")MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         Box{OutlinedButton(onClick={open=true},modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(options.find{it.first==value}?.second?:"Seleziona")}
             DropdownMenu(expanded=open,onDismissRequest={open=false}){options.forEach{(key,text)->DropdownMenuItem(text={Text(text)},onClick={open=false;onChange(key)})}}}
     }
@@ -76,7 +76,7 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
         var base by remember{mutableStateOf(if(BuildConfig.DEBUG)"http://10.0.2.2:8000" else "https://")}
         var username by remember{mutableStateOf("")};var password by remember{mutableStateOf("")}
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
-            Text("Collettori PAT",style=MaterialTheme.typography.headlineLarge);Text("Pilota 0.1 · Accesso individuale")
+            Text("Collettori PAT",style=MaterialTheme.typography.headlineLarge);Text("Pilota 0.11 · Accesso individuale")
             Text("Primo accesso online. I controlli già salvati rimangono separati per utente.")
             Field("Indirizzo server",base){base=it};Field("Nome utente",username){username=it}
             OutlinedTextField(password,{password=it},label={Text("Password")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
@@ -146,7 +146,7 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
         }else{
         Scaffold(bottomBar={NavigationBar{listOf("Mappa","Pozzetti","Controlli","Dati offline","Account").forEach{t->NavigationBarItem(selected=tab==t,onClick={tab=t},icon={Text(when(t){"Mappa"->"◉";"Pozzetti"->"▦";"Controlli"->"✓";"Dati offline"->"↓";else->"●"})},label={Text(t)})}}}){padding->
             Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding().padding(horizontal=16.dp)){
-                Text(if(BuildConfig.DEMO)"Collettori DEMO · autonoma" else "Collettori PAT · 0.1",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.padding(top=12.dp))
+                Text(if(BuildConfig.DEMO)"Collettori DEMO · autonoma" else "Collettori PAT · 0.11",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.padding(top=12.dp))
                 Text(if(BuildConfig.DEMO)"Senza server · dati sintetici · salvataggio locale" else ((if(online)"Rete disponibile" else "Senza rete")+" · "+visits.count{it.operational!="BOZZA"&&it.sync!="RICEVUTO_SERVER"}+" controlli da inviare"),style=MaterialTheme.typography.bodySmall)
                 if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
                 if(message.isNotBlank()){Text(message,modifier=Modifier.padding(vertical=8.dp),style=MaterialTheme.typography.bodySmall);TextButton(onClick={message=""}){Text("Chiudi messaggio")}}
@@ -212,7 +212,7 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
                     }
                     "Dati offline"->{
                         if(BuildConfig.DEMO){
-                            Text("Cartografia sintetica inclusa: 16 pozzetti e 15 tratti. Nessun download richiesto.")
+                            Text("Cartografia sintetica inclusa: 10 pozzetti e 9 tratti. Nessun download richiesto.")
                             Text("GPS reale su richiesta. I pozzetti demo sono nell'area di Trento: altrove l'esito può essere incompatibile. Motiva l'eccezione per provare la scheda.")
                             Text("Bozze e controlli restano sul telefono anche riaprendo l'app. Nessun dato viene inviato a Supabase.")
                         }else Column(Modifier.verticalScroll(rememberScrollState())){
@@ -247,7 +247,7 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
                             }
                         }else Column(Modifier.verticalScroll(rememberScrollState())){
                             Text(session!!.getString("username"),style=MaterialTheme.typography.headlineMedium);Text("Ruolo: "+session!!.getString("role"));Text("Server: "+session!!.getString("base"))
-                            Text("Collettori PAT · versione 0.1 · build ${BuildConfig.VERSION_CODE}")
+                            Text("Collettori PAT · versione 0.11 · build ${BuildConfig.VERSION_CODE}")
                             Text("L'app raccoglie la posizione soltanto su richiesta. Il GPS non verifica apertura o qualità del controllo.",modifier=Modifier.padding(vertical=16.dp))
                             Text("Abilitazione offline: "+shown(repo.store.get()?.getString("offline_until")))
                             Button(onClick={task{catalog=repo.catalog();session=repo.store.get();message="Connessione verificata"}}){Text("Verifica sessione online")}
@@ -279,12 +279,13 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
         TextButton(onClick=onBack){Text("← Torna")}
         if(BuildConfig.DEMO)Text("DEMO · scheda locale su dati sintetici",color=MaterialTheme.colorScheme.secondary)
         Text("Pozzetto "+(point?.getString("code")?:visit.manholeId),style=MaterialTheme.typography.headlineMedium)
-        Text("Versione dati: "+visit.datasetId,style=MaterialTheme.typography.bodySmall)
+        Text("Controlli preimpostati regolari: verifica e modifica le anomalie.",style=MaterialTheme.typography.bodySmall)
         Text(operational(visit.operational)+" · "+syncLabel(visit.sync));Text("Revisione "+body.getInt("revision")+" · "+(visit.receipt?.let{JSONObject(it).optString("review")}?:"Non esaminata"))
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         if(message.isNotBlank())Text(message)
         Text(saveState,style=MaterialTheme.typography.bodySmall)
         Text("Usa il telefono da posizione sicura, dopo le operazioni delicate. L'apertura è una dichiarazione dell'operatore.",modifier=Modifier.padding(vertical=12.dp))
+        PhotoPanel(repo,visit)
         val events=body.getJSONArray("events").objects()
         events.forEachIndexed{index,e->
             val ev=e.getJSONObject("local_evaluation")
@@ -292,7 +293,7 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
             Text(GpsRule.label(ev.getString("state")))
             Text("Distanza: ${ev.numberOrNull("distance_m")?.let{"%.1f m".format(it)}?:"—"} · Accuratezza: ${e.numberOrNull("accuracy_m")?.let{"%.1f m".format(it)}?:"—"}",style=MaterialTheme.typography.bodySmall)
             Text("Dispositivo: ${e.numberOrNull("latitude")?:"—"}, ${e.numberOrNull("longitude")?:"—"}",style=MaterialTheme.typography.bodySmall)
-            Text(ev.getJSONArray("reasons").toString(),style=MaterialTheme.typography.bodySmall)
+            Text(precisionText(e),style=MaterialTheme.typography.bodySmall)
         }
         if(draft&&body.getInt("revision")==1)Button(enabled=!busy,onClick={scope.launch{lock.withLock{onCapture()}}}){Text(if(events.isEmpty())"Rileva posizione" else "Rileva nuovamente (nuovo evento)")}
         if(!draft){
@@ -305,6 +306,19 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
             visit.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         }else{
             if(body.getInt("revision")>1)Field("Motivo della revisione",body.optString("revision_reason")){changeBody("revision_reason",it)}
+            var details by remember(visit.id){mutableStateOf(!BuildConfig.DEMO)}
+            Text("Verifica tutti i controlli prima di registrare. Apertura preimpostata: effettuata; pulizia: non eseguita.",style=MaterialTheme.typography.bodySmall)
+            TextButton(onClick={details=!details}){Text(if(details)"Riduci controlli" else "Verifica controlli / segnala anomalia")}
+            if(BuildConfig.DEMO && !details){
+                Text("Accessibilità: "+(if(sheet.boolOrNull("accessible")==true)"Accessibile" else "Da verificare / impedita"))
+                Text("Apertura dichiarata: "+(if(sheet.boolOrNull("opened")==true)"Effettuata" else "Non effettuata"))
+                if(sheet.optBoolean("unsafe"))Text("Attenzione: controllo non eseguibile in sicurezza",color=MaterialTheme.colorScheme.error)
+                if(sheet.optString("anomaly_note").isNotBlank())Text("Anomalia: "+sheet.getString("anomaly_note"),color=MaterialTheme.colorScheme.error)
+                Repository.observationKeys.forEach{k->Text(fieldLabels[k]+": "+when(sheet.getString(k)){"REGOLARE"->when(k){"deposits","damage"->"Assenti";"walls"->"Integre";else->"Regolare"};else->sheet.getString(k)},color=if(sheet.getString(k)=="ANOMALO")MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)}
+                if(events.lastOrNull()?.getJSONObject("local_evaluation")?.optString("state")!="COMPATIBILE")Field("Motivazione eccezione GPS",sheet.getString("exception_reason")){change("exception_reason",it)}
+                Field("Note",sheet.getString("notes")){change("notes",it)}
+            }
+            if(details){
             Text("A · Accessibilità e apertura",style=MaterialTheme.typography.titleLarge)
             val yesNo=listOf("unset" to "Da indicare","true" to "Sì","false" to "No")
             Choice("Manufatto accessibile",(sheet.opt("accessible")?.toString()?:"null").let{if(it=="null")"unset" else it},yesNo){change("accessible",if(it=="unset")JSONObject.NULL else it.toBoolean())}
@@ -313,7 +327,7 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
             if(sheet.boolOrNull("opened")!=true)Field("Motivo della mancata apertura / impedimento",sheet.getString("no_open_reason")){change("no_open_reason",it)}
             Text("B · Condizioni osservate",style=MaterialTheme.typography.titleLarge)
             val obs=listOf("NON_VERIFICATO" to "Non verificato","REGOLARE" to "Regolare","ANOMALO" to "Anomalo","NON_OSSERVABILE" to "Non osservabile","NON_APPLICABILE" to "Non applicabile")
-            listOf("cover","deposits","flow","walls","damage").forEach{k->Choice(fieldLabels[k]!!,sheet.getString(k),obs){change(k,it)}}
+            listOf("cover","deposits","flow","walls","damage").forEach{k->Choice(fieldLabels[k]!!,sheet.getString(k),obs.map{if(it.first=="REGOLARE")it.first to when(k){"deposits","damage"->"Assenti";"walls"->"Integre";"flow"->"Regolare / libero";else->"Regolare"}else it}){change(k,it)}}
             Text("C · Anomalie e attività",style=MaterialTheme.typography.titleLarge)
             Choice("Pulizia eseguita (attività distinta)",(sheet.opt("cleaning")?.toString()?:"null").let{if(it=="null")"unset" else it},yesNo){change("cleaning",if(it=="unset")JSONObject.NULL else it.toBoolean())}
             Field("Descrizione anomalia",sheet.getString("anomaly_note")){change("anomaly_note",it)}
@@ -331,7 +345,8 @@ fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nes
             var technical by remember{mutableStateOf(false)}
             TextButton(onClick={technical=!technical}){Text("E · Informazioni tecniche facoltative")}
             if(technical){Field("Materiali / dimensioni e unità",sheet.getString("technical_value")){change("technical_value",it)};Choice("Origine del dato",sheet.getString("technical_origin"),listOf("NON_NOTO","OSSERVATO","MISURATO","DOCUMENTALE","IPOTIZZATO").map{it to it}){change("technical_origin",it)}}
-            listOf("COMPLETO" to "Completa controllo dichiarato","PARZIALE" to "Concludi come parziale","IMPEDITO" to "Registra impedimento").forEach{(state,label)->Button(enabled=!busy,onClick={scope.launch{lock.withLock{onComplete(JSONObject(bodyText),state)}}},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text(label)}}
+            }
+            listOf("COMPLETO" to "Registra ispezione completa","PARZIALE" to "Concludi come parziale","IMPEDITO" to "Registra impedimento").forEach{(state,label)->Button(enabled=!busy,onClick={scope.launch{lock.withLock{onComplete(JSONObject(bodyText),state)}}},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text(label)}}
             OutlinedButton(onClick={scope.launch{lock.withLock{try{repo.saveDraft(visit.id,JSONObject(bodyText));onMessage("Bozza salvata sul dispositivo")}catch(e:Exception){onMessage(e.message?:"Salvataggio non riuscito")}}}},modifier=Modifier.fillMaxWidth()){Text("Salva bozza")}
         }
         Spacer(Modifier.height(32.dp))

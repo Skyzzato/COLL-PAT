@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11 — 2026-09-18 (pre-release)
+
+Mappa OSM e quattro tab demo; dataset Trento con 10 pozzetti. Identificazione GPS con accuratezza, candidati e conferma. Ispezioni con default regolari, anomalie e riepilogo. Foto locali con repository remoto non configurato. Contratti RFID/NFC/QR e associazioni tag. Documentazione completa e test aggiunti. Nessuna migration SQL; backend compatibile con app_version 0.11.
+
+# Changelog
+
 ## 0.1-demo — prova autonoma Android
 
 - APK separato Collettori Demo, senza login, server, scadenza sessione o permesso Internet.

@@ -12,8 +12,8 @@ android {
         applicationId = "it.pat.collettori.pilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 11
+        versionName = "0.11"
         buildConfigField("boolean", "DEMO", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

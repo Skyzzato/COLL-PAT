@@ -1,3 +1,9 @@
+# Roadmap v0.11
+
+Priorità: collaudo dispositivo, storage foto con upload differito e ricevute, NFC/HF on-metal e associazione amministrativa, QR fallback, esportazione portabile immagini, cartografia offline autorizzata. Nessun editing GIS avanzato nella demo.
+
+## Roadmap storica del pilota
+
 # Roadmap
 
 ## FASE ATTUALE — v0.1

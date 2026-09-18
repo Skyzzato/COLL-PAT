@@ -26,11 +26,14 @@ private fun pointGeometry(lat:Double,lon:Double)=JSONObject().put("type","Point"
  * Vector layers, not per-point Android views. Glyph assets ship in the APK. */
 fun localStyle(pack:JSONObject,points:List<JSONObject>,selected:String?,position:JSONObject?):String{
     val sources=JSONObject()
+    if(pack.optBoolean("osm"))sources.put("osm",JSONObject().put("type","raster").put("tiles",JSONArray(listOf("https://tile.openstreetmap.org/{z}/{x}/{y}.png"))).put("tileSize",256).put("maxzoom",19).put("attribution","<a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap contributors</a>"))
     fun source(id:String,data:JSONObject){sources.put(id,JSONObject().put("type","geojson").put("data",data))}
     source("base",if(pack.isNull("basemap"))fc(emptyList())else pack.getJSONObject("basemap"))
     source("network",fc(pack.getJSONArray("segments").objects().map{feature(it.getJSONObject("geometry"),JSONObject().put("code",it.getString("collector")))}))
     source("points",fc(points.map{feature(pointGeometry(it.getDouble("latitude"),it.getDouble("longitude")),JSONObject().put("id",it.getString("id")).put("code",it.getString("code")))}))
     source("selected",fc(points.filter{it.getString("id")==selected}.map{feature(pointGeometry(it.getDouble("latitude"),it.getDouble("longitude")))}))
+    val candidateIds=position?.optJSONArray("candidate_ids")
+    source("candidates",fc(points.filter{p->candidateIds!=null && (0 until candidateIds.length()).any{candidateIds.getString(it)==p.getString("id")}}.map{feature(pointGeometry(it.getDouble("latitude"),it.getDouble("longitude")))}))
     val latitude=position?.numberOrNull("latitude");val longitude=position?.numberOrNull("longitude")
     val hasPosition=latitude!=null && longitude!=null
     source("device",fc(if(hasPosition)listOf(feature(pointGeometry(latitude!!,longitude!!)))else emptyList()))
@@ -52,9 +55,15 @@ fun localStyle(pack:JSONObject,points:List<JSONObject>,selected:String?,position
         {"id":"accuracy-edge","type":"line","source":"accuracy","paint":{"line-color":"#3182ce","line-width":1}},
         {"id":"manholes","type":"circle","source":"points","paint":{"circle-radius":6,"circle-color":"#ffffff","circle-stroke-color":"#176d73","circle-stroke-width":2}},
         {"id":"labels","type":"symbol","source":"points","minzoom":14,"layout":{"text-field":"{code}","text-font":["Noto Sans Regular"],"text-size":12,"text-offset":[0,1.2]},"paint":{"text-color":"#143c43","text-halo-color":"#ffffff","text-halo-width":2}},
+        {"id":"candidate-ring","type":"circle","source":"candidates","paint":{"circle-radius":16,"circle-opacity":0,"circle-stroke-color":"#2766b0","circle-stroke-width":2}},
         {"id":"selected-ring","type":"circle","source":"selected","paint":{"circle-radius":12,"circle-opacity":0,"circle-stroke-color":"#bd7117","circle-stroke-width":4}},
         {"id":"device-point","type":"circle","source":"device","paint":{"circle-radius":7,"circle-color":"#2766b0","circle-stroke-color":"#ffffff","circle-stroke-width":2}}
     ]""")
+    if(pack.optBoolean("osm")) {
+        val reordered=JSONArray().put(layers.getJSONObject(0)).put(JSONObject().put("id","osm-tiles").put("type","raster").put("source","osm"))
+        for(i in 1 until layers.length())reordered.put(layers.getJSONObject(i))
+        return JSONObject().put("version",8).put("glyphs","asset://glyphs/{fontstack}/{range}.pbf").put("sources",sources).put("layers",reordered).toString()
+    }
     return JSONObject().put("version",8).put("glyphs","asset://glyphs/{fontstack}/{range}.pbf").put("sources",sources).put("layers",layers).toString()
 }
 
@@ -72,13 +81,13 @@ fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position
         owner.lifecycle.addObserver(lifecycle)
         view.onStart();view.onResume()
         view.addOnDidFailLoadingMapListener{error("Mappa non caricata: $it. Dati e schede restano disponibili.")}
-        view.getMapAsync{m->map=m;m.uiSettings.isAttributionEnabled=false;m.uiSettings.isLogoEnabled=false
+        view.getMapAsync{m->map=m;m.uiSettings.isAttributionEnabled=pack.optBoolean("osm");m.uiSettings.isLogoEnabled=false
             m.addOnMapClickListener{ll->val px=m.projection.toScreenLocation(ll);val hits=m.queryRenderedFeatures(RectF(px.x-20,px.y-20,px.x+20,px.y+20),"manholes")
                 if(hits.size==1)select(hits.first().getStringProperty("id"))else if(hits.size>1)error("Più pozzetti in questo punto: aumentare lo zoom o selezionare dall'elenco.");true}
-            val first=pack.getJSONArray("points").objects().firstOrNull();if(first!=null)m.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(first.getDouble("latitude"),first.getDouble("longitude")),15.0))}
+            val all=pack.getJSONArray("points").objects();if(all.isNotEmpty())m.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(all.map{it.getDouble("latitude")}.average(),all.map{it.getDouble("longitude")}.average()),14.5))}
         onDispose{owner.lifecycle.removeObserver(lifecycle);view.onPause();view.onStop();view.onDestroy()}
     }
     LaunchedEffect(map,style){map?.setStyle(Style.Builder().fromJson(style))}
-    LaunchedEffect(map,center){center?.let{map?.animateCamera(CameraUpdateFactory.newLatLngZoom(it.first,17.0))}}
+    LaunchedEffect(map,center){center?.let{map?.animateCamera(CameraUpdateFactory.newLatLngZoom(it.first,if(it.second<0)14.5 else 17.0))}}
     AndroidView(factory={view},modifier=modifier)
 }

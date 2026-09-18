@@ -17,7 +17,11 @@ import kotlinx.coroutines.sync.withLock
 
 class PilotApplication:Application(){
     lateinit var repository:Repository
-    override fun onCreate(){super.onCreate();repository=Repository(this);repository.schedule()}
+    override fun onCreate(){super.onCreate()
+        org.maplibre.android.module.http.HttpRequestUtil.setOkHttpClient(okhttp3.OkHttpClient.Builder()
+            .cache(okhttp3.Cache(java.io.File(cacheDir,"osm-http"),50L*1024*1024))
+            .addInterceptor{chain->chain.proceed(chain.request().newBuilder().header("User-Agent","Collettori/0.11 (Android demo; https://github.com/Skyzzato/Collettori)").build())}.build())
+        repository=Repository(this);repository.schedule()}
 }
 
 class Repository(val context:Context){
@@ -33,7 +37,7 @@ class Repository(val context:Context){
         val hash=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
         db.withTransaction{
             if(dao.pack(DemoMode.owner,p.getString("version"))==null)
-                dao.install(OfflinePackage(DemoMode.owner,p.getString("version"),p.getString("area_id"),String(bytes,Charsets.UTF_8),hash,bytes.size.toLong(),"2026-09-16T00:00:00Z",true))
+                dao.install(OfflinePackage(DemoMode.owner,p.getString("version"),p.getString("area_id"),String(bytes,Charsets.UTF_8),hash,bytes.size.toLong(),"2026-09-18T00:00:00Z",true))
             dao.setting(Setting(DemoMode.owner,"catalog",DemoMode.catalog(rule).toString()))
         }
         store.save(DemoMode.session())
@@ -45,7 +49,9 @@ class Repository(val context:Context){
     suspend fun localCatalog():JSONObject?=dao.settingValue(owner(),"catalog")?.let(::JSONObject)
     suspend fun recoveryBundle():String{
         val account=owner()
-        if(BuildConfig.DEMO)return DemoMode.export(dao.visitsNow(account).map{JSONObject(it.body)}).toString(2)
+        if(BuildConfig.DEMO)return DemoMode.export(dao.visitsNow(account).map{visit->JSONObject(visit.body)
+            .put("photos",JSONArray(PhotoRepository(this).list(visit)))
+            .put("identification",dao.settingValue(account,"identification:"+visit.id)?.let(::JSONObject)?:JSONObject.NULL)}).toString(2)
         return JSONObject().put("format","collettori-recovery-1").put("created_at",Instant.now().toString())
             .put("operations",JSONArray(dao.allPending(account).map{JSONObject(it.body)}))
             .put("drafts",JSONArray(dao.visitsNow(account).filter{it.operational=="BOZZA"}.map{JSONObject(it.body)})).toString(2)
@@ -126,6 +132,7 @@ class Repository(val context:Context){
         requireOffline();val account=owner();val old=dao.visit(id,account)?:error("Controllo assente")
         check((old.sync=="RICEVUTO_SERVER"||(BuildConfig.DEMO&&old.sync=="DEMO_LOCALE"))&&dao.pendingVisit(id).isEmpty()){"Sincronizzare la revisione precedente prima della correzione"}
         dao.setting(Setting(account,"revision:$id:${JSONObject(old.body).getInt("revision")}",old.body))
+        dao.setting(Setting(account,"photo-revision:$id:${JSONObject(old.body).getInt("revision")}",JSONArray(PhotoRepository(this).list(old)).toString()))
         val p=JSONObject(old.body);p.put("revision",p.getInt("revision")+1).put("revision_reason","")
         val draft=old.copy(body=p.toString(),operational="BOZZA",sync="SALVATO_LOCALMENTE",receipt=null);dao.save(draft);return draft
     }
@@ -158,9 +165,9 @@ class Repository(val context:Context){
     companion object{
         val observationKeys=listOf("cover","deposits","flow","walls","damage","closure","restored")
         fun defaultSheet():JSONObject=JSONObject().apply{
-            put("accessible",JSONObject.NULL);put("opened",JSONObject.NULL);put("cleaning",JSONObject.NULL)
+            put("accessible",true);put("opened",true);put("cleaning",false)
             put("unsafe",false);put("map_position_wrong",false)
-            observationKeys.forEach{put(it,"NON_VERIFICATO")}
+            observationKeys.forEach{put(it,"REGOLARE")}
             listOf("no_open_reason","anomaly_note","technical_value","notes","exception_reason").forEach{put(it,"")}
             put("priority","MEDIA");put("technical_origin","NON_NOTO")
         }

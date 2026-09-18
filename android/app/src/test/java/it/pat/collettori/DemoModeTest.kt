@@ -8,8 +8,8 @@ class DemoModeTest {
     @Test fun bundledDatasetIsSyntheticAndSelfContained(){
         val p=JSONObject(javaClass.classLoader!!.getResource("demo-package.json")!!.readText())
         assertTrue(p.getBoolean("synthetic"))
-        assertEquals(16,p.getJSONArray("points").length())
-        assertEquals(15,p.getJSONArray("segments").length())
+        assertEquals(10,p.getJSONArray("points").length())
+        assertEquals(9,p.getJSONArray("segments").length())
         assertFalse(p.isNull("basemap"))
         val points=p.getJSONArray("points").objects()
         val ids=points.map{it.getString("id")}.toSet()
@@ -18,7 +18,8 @@ class DemoModeTest {
             assertTrue(ids.contains(it.getString("to_id")))
         }
         val style=localStyle(p,points,null,null)
-        assertFalse(style.contains("https://"))
+        assertTrue(style.contains("https://tile.openstreetmap.org"))
+        assertTrue(style.contains("OpenStreetMap contributors"))
         assertFalse(style.contains("http://"))
     }
     @Test fun exportCannotBeMistakenForOperationalRecovery(){

@@ -24,7 +24,7 @@ class LocationCapture(private val context:Context):EvidenceCollector{
         val coarse=context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
         val e=JSONObject().put("id",UUID.randomUUID().toString()).put("inspection_id",inspection.getString("id"))
             .put("manhole_id",inspection.getString("manhole_id")).put("user_id",inspection.getString("user_id")).put("device_id",inspection.getString("device_id"))
-            .put("dataset_id",inspection.getString("dataset_id")).put("rule_version",rule.version).put("app_version","0.1")
+            .put("dataset_id",inspection.getString("dataset_id")).put("rule_version",rule.version).put("app_version","0.11")
             .put("requested_at",Instant.now().toString()).put("permission",if(precise)"PRECISE" else if(coarse)"APPROXIMATE" else "DENIED")
         listOf("latitude","longitude","accuracy_m","age_s","provider","mock","error").forEach{e.put(it,JSONObject.NULL)}
         val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager

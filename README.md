@@ -1,117 +1,57 @@
-# Collettori — v0.1
+# Collettori — v0.11
 
-Applicazione Android e server per le **sole ispezioni dei collettori intercomunali e dei relativi pozzetti**. Nome provvisorio, nessun logo istituzionale. Il GPS documenta un evento dichiarato: **non verifica l'apertura e non certifica il controllo tecnico**.
+Demo Android per trovare, identificare e ispezionare pozzetti di collettori intercomunali. I dati inclusi sono **sintetici**, non rappresentano infrastrutture PAT. Il GPS indica prossimità, non certifica apertura o qualità del controllo.
 
-## Contenuto
+## Prova della demo
 
-**Prova senza server:** è disponibile una [demo autonoma per telefono](docs/DEMO-TELEFONO.md),
-con APK separato, dati sintetici inclusi e nessun login.
+Installare `Collettori-v0.11-demo.apk` dalla pre-release. Android 8 o successivo, Google Play services per localizzazione. Nessun account richiesto. APK demo separato dall'app pilota (`it.pat.collettori.pilot.demo`).
 
-- Android Kotlin/Compose, Room, WorkManager, MapLibre Native; cinque schermate, ricerca, mappa locale, schede, bozze, eventi GPS, revisioni e invii persistenti.
-- FastAPI, SQLAlchemy, migrazione Alembic; PostgreSQL/PostGIS in Docker Compose. SQLite è disponibile **solo come ambiente locale di sviluppo e test**, non sostituisce il collaudo PostgreSQL.
-- Portale amministrativo HTML/JavaScript senza dipendenze frontend: ispezioni, verifica documentale, scadenze, anomalie, account, versioni GPS, emissioni XLSX/CSV/JSON e stampa.
-- Importazione amministrativa di shapefile completi, UUID stabili, versioni immutabili e rapporti d'importazione.
-- Dataset e base dimostrativi **interamente sintetici**. Nessun dato PAT reale è incluso. Nessuna scadenza trimestrale viene creata automaticamente.
+1. Mappa → La mia posizione: mostra distanza, precisione e candidati, senza selezione automatica.
+2. Toccare un pozzetto → confermare il codice → Avvia ispezione.
+3. Verificare il riepilogo regolare, espandere i controlli per anomalie o impedimenti.
+4. Scattare/selezionare foto; aggiungere note o motivazione GPS quando richiesta.
+5. Registrare. Bozze, ispezioni e immagini rimangono sul telefono.
 
-Fotografie, QR, codice targhetta, NFC e sensori non sono implementati né richiesti nei permessi Android.
+Quattro schede: Mappa, Pozzetti (fallback manuale e filtri), Ispezioni, Altro (informazioni ed esportazione). La versione pilota mantiene autenticazione, download, sincronizzazione e amministrazione esistenti.
 
-## Avvio locale su Windows (senza Docker)
+## Tecnologia e compilazione
 
-Prerequisiti: Python 3.12, JDK 17 o 21, Android SDK 36. Gradle Wrapper incluso. Le dipendenze Python e Gradle sono bloccate; la prima installazione richiede Internet.
-
-Dalla cartella del progetto, in PowerShell:
+Kotlin, Jetpack Compose Material 3, Room, WorkManager, MapLibre Native 13.6.1. Backend FastAPI/SQLAlchemy; PostgreSQL/PostGIS e Supabase già predisposti. Dipendenze bloccate nei lockfile. JDK 17/21, Android SDK 36.
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r backend\requirements.lock
-.\.venv\Scripts\python.exe scripts\make_demo.py
-Set-Location backend
-New-Item -ItemType Directory -Force runtime
-..\.venv\Scripts\python.exe -m alembic upgrade head
-..\.venv\Scripts\python.exe -m app.cli bootstrap --username nome.cognome --company "Impresa pilota sintetica" --area DEMO --area-name "Area dimostrativa sintetica" --synthetic
-..\.venv\Scripts\python.exe -m app.cli import-gis ..\demo\synthetic.zip ..\demo\mapping.json
-..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+powershell -ExecutionPolicy Bypass -File scripts/build-android.ps1 -Demo
 ```
 
-`bootstrap` chiede due volte una password di almeno 12 caratteri; nessuna credenziale predefinita è inclusa. Non riutilizzare un nome account esistente. Se `.venv` è già presente e funzionante, saltare la sua creazione.
-
-Aprire **http://127.0.0.1:8000**, accedere con l'amministratore individuale e creare almeno un account operaio in **Amministrazione**, autorizzato all'area DEMO. Il portale richiede ruolo verificatore/amministratore; gli operai usano l'app. Documentazione API: `/docs`.
-
-Su macOS/Linux usare `python3` e `.venv/bin/python` al posto degli eseguibili Windows.
-
-## Avvio PostgreSQL/PostGIS con Docker
-
-1. Copiare `.env.example` in `.env` e valorizzare `POSTGRES_PASSWORD` con un segreto casuale URL-safe. Non usare password reali dell'organizzazione.
-2. Dalla radice:
+Oppure nella cartella `android`, con JAVA_HOME e ANDROID_HOME configurati:
 
 ```text
-docker compose up -d --build
-docker compose exec api python -m app.cli bootstrap --username nome.cognome --company "Impresa pilota sintetica" --area DEMO --area-name "Area dimostrativa sintetica" --synthetic
-docker compose exec api python -m app.cli import-gis demo/synthetic.zip demo/mapping.json
+gradlew.bat :app:assembleDemo :app:testDemoUnitTest :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
 ```
 
-L'API esegue la migrazione prima dell'avvio. Solo la porta locale `127.0.0.1:8000` è esposta; PostgreSQL non è pubblicato all'esterno. I volumi `database` e `files` conservano dati e fonti. **Non usare `docker compose down -v` su un ambiente con dati da conservare.**
-
-Per uso reale: terminazione HTTPS, protezione dell'accesso amministrativo, segreti gestiti, infrastruttura approvata, supervisione, conservazione e backup verificati. Questa configurazione è di sviluppo, non un deploy produttivo già autorizzato.
-
-## Compilare e collegare Android
-
-Aprire la cartella `android` in Android Studio, configurare SDK 36 e JDK 17/21. Oppure, da PowerShell nella cartella `android`:
+APK generato: `android/app/build-pilot/outputs/apk/demo/app-demo.apk`. La copia di distribuzione si chiama `Collettori-v0.11-demo.apk`. VersionName `0.11-demo`, versionCode `11`; variante pilota `0.11`.
 
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
-$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
-.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest
+.venv/Scripts/python.exe -m pytest -q
 ```
 
-APK: **`android/app/build-pilot/outputs/apk/debug/app-debug.apk`**. La cartella `build-pilot` evita una cache di compilazione bloccata osservata su Windows. Minimo Android 8 (API 26). La localizzazione usa Google Play services: per il pilota serve un dispositivo che li supporti. I dispositivi senza tali servizi producono un'eccezione di localizzazione, non una posizione fittizia.
+Per il server: creare una venv Python 3.12, installare `backend/requirements.lock`, configurare `.env` da `.env.example`, applicare le migrazioni iniziali e seguire [OPERATIONS](docs/OPERATIONS.md) e [SUPABASE](docs/SUPABASE.md). Nessun secret va versionato. Aggiornare anche il backend per accettare gli eventi app `0.11`; restano accettati gli eventi storici `0.1`.
 
-Se Windows assegna l'attributo sola lettura alle cartelle generate, dalla radice usare `powershell -File scripts/build-android.ps1`: normalizza soltanto gli artefatti di build e avvia compilazione e test. Non cancella dati applicativi o progetti estranei.
+## Struttura e dati
 
-Telefono USB con debug USB autorizzato:
+- `android/`: applicazione, test e asset locali.
+- `backend/`: API, portale e migrazione Alembic iniziale.
+- `demo/trento-v0.11.json`: sorgente demo modificabile, 10 pozzetti PZ-001…PZ-010 e 9 segmenti, circa 1,08 km presso Trento.
+- `scripts/build_demo_asset.py`: copia deterministica del dataset nell'APK.
+- `shared/`: regole GPS del pilota e casi condivisi.
+- `docs/`: architettura, analisi funzionale, modello dati, roadmap e collaudo.
+- `supabase/migrations/`: schema iniziale esistente; nessuna nuova migration per v0.11.
 
-```text
-adb install -r android/app/build-pilot/outputs/apk/debug/app-debug.apk
-adb reverse tcp:8000 tcp:8000
-```
+Il vecchio shapefile sintetico resta per i test di importazione backend: non è il dataset della nuova demo. Aggiornando l'APK, vecchi pacchetti e ispezioni rimangono conservati; la demo apre sempre il pacchetto v0.11.
 
-Nella schermata di accesso dell'app impostare **`http://127.0.0.1:8000`** e l'account individuale. Per l'emulatore Android il server del computer è normalmente **`http://10.0.2.2:8000`**. HTTP è ammesso soltanto nella build debug; la configurazione principale richiede HTTPS.
+## Limiti e roadmap
 
-1. Accedere online.
-2. Aprire **Dati offline → Aggiorna catalogo e sessione → Scarica area e storico**.
-3. Verificare versione, copertura, dimensione e presenza della base.
-4. Aprire **Pozzetti** o **Mappa**, selezionare esplicitamente un manufatto, **Avvia controllo**.
-5. Concedere o negare il permesso di localizzazione: entrambi i casi vengono gestiti. Compilare, motivare eventuali eccezioni, salvare.
-6. Usare **Controlli → Sincronizza ora**; la ricezione si considera avvenuta soltanto dopo la risposta server.
+OpenStreetMap online; in assenza di rete restano tracciato e pozzetti locali, non una base geografica offline completa. Nessun download massivo di tile. Foto persistite nello spazio privato dell'app, senza upload. Export JSON con riferimenti alle foto, **non** i file immagine. NFC/RFID e QR sono contratti futuri, nessuna scansione simulata. Mancano storage remoto, associazione amministrativa dei tag e collaudo fisico sul campo. Disinstallazione o cancellazione dati rimuovono il lavoro locale.
 
-La demo usa coordinate nell'area di Trento ma **non rappresenta manufatti o strade reali**. Un telefono altrove darà normalmente un esito negativo: è corretto. Non aumentare le soglie per trasformare la demo in una falsa evidenza favorevole.
+**MIGRAZIONE SQL NECESSARIA: NO** per aggiornare da questa base alla v0.11. Room rimane v1; metadati aggiuntivi nei contenitori JSON già presenti. Un'installazione backend nuova richiede comunque lo schema iniziale già documentato.
 
-## Test
-
-Dalla radice:
-
-```text
-.venv\Scripts\python.exe -m pytest -q
-```
-
-Da `android`:
-
-```text
-gradlew.bat :app:testDebugUnitTest :app:assembleDebugAndroidTest
-gradlew.bat :app:connectedDebugAndroidTest
-```
-
-L'ultimo comando richiede un dispositivo o emulatore realmente disponibile. Compilare i test strumentali non significa averli eseguiti. Risultati e limiti del collaudo sono in [docs/VALIDATION.md](docs/VALIDATION.md); le prove sul campo sono in [docs/PILOT-CHECKLIST.md](docs/PILOT-CHECKLIST.md).
-
-## Documentazione
-
-- [Supabase: migrazione SQL e compatibilità APK](docs/SUPABASE.md)
-- [Prompt di passaggio v0.1](PROMPT-v0.1.md)
-- [Importazione GIS e cartografia offline](docs/GIS.md)
-- [Protocollo offline, account, conflitti e recupero](docs/OFFLINE.md)
-- [Regola GPS e limiti delle evidenze](docs/GPS.md)
-- [Server, backup e verifiche organizzative](docs/OPERATIONS.md)
-- [Scelte, dipendenze e fonti ufficiali](docs/ARCHITECTURE.md)
-- [Roadmap](ROADMAP.md) e [changelog](CHANGELOG.md)
-
-Non disinstallare l'app, cancellarne i dati o smarrire il dispositivo prima della trasmissione: la persistenza locale non protegge dalla perdita fisica del telefono. Nessun aggiornamento dell'app o dei pacchetti cancella volontariamente i controlli pendenti.
+Vedi [analisi funzionale](docs/ANALISI_FUNZIONALE.md), [architettura](docs/ARCHITECTURE.md), [modello dati](docs/DATA_MODEL.md), [RFID/NFC](docs/RFID_NFC_ROADMAP.md), [collaudo v0.11](docs/VALIDATION-v0.11.md), [changelog](CHANGELOG.md).

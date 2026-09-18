@@ -1,3 +1,5 @@
+> Documento del pilota originario: i riferimenti v0.1 e relativi collaudi sono storici. Per la demo corrente v0.11 consultare [README](../README.md) e [collaudo v0.11](VALIDATION-v0.11.md). Foto locali e nuova UX sono descritti lì.
+
 # Verifica della consegna 0.1
 
 ## Eseguito in questo ambiente

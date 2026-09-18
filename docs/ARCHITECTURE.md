@@ -1,51 +1,27 @@
-# Scelte tecniche della v0.1
+# Architettura — v0.11
 
-Repository inizialmente vuoto, senza AGENTS.md o componenti esistenti. Nessuna applicazione estranea modificata.
+## Componenti
 
-## Architettura
+`PilotApplication` crea Repository e client cartografico. `MainActivity` instrada la build demo a `DemoWorkspace`; mantiene il flusso Pilot autenticato. DemoWorkspace gestisce le quattro schede, conferma del pozzetto, selezione del dataset, GPS e ripresa della bozza. `InspectionEditor` è condiviso: riepilogo compatto nella demo, controlli espandibili, revisioni e validazioni. `PhotoPanel` gestisce i contratti Android TakePicture/GetContent e anteprime decodificate fuori dal thread UI.
 
-```text
-Shapefile + mapping + base autorizzata
-             │ import amministrativo
-             ▼
-FastAPI ── PostgreSQL/PostGIS ── snapshot dei rapporti
-   │              │
-   │              └── fonti e rapporti d'import in volume persistente
-   ├── portale web HTML/JS (stessa origine, token individuale)
-   └── API autenticata
-          │ catalogo, pacchetti, visite, ricevute
-          ▼
-Android: Compose → Repository → Room / outbox → WorkManager
-             │                     │
-             ├── MapLibre          └── dati separati per account
-             └── acquisizione posizione in primo piano
-```
+`Repository` conserva pacchetti, visite, eventi e coda transazionale. `PhotoRepository` separa media privati e metadati da `RemotePhotoStorage`; l'implementazione non configurata restituisce un errore, mai una ricevuta falsa. Non aggiunge URI locali al payload del server pilota. `Identification.kt` definisce metodo, associazione tag e servizio di identificazione; GPS è l'unico adattatore implementato. Gli enum/contratti QR preesistenti restano compatibili.
 
-Separazioni architetturali: `AssetSelection`/`AssetIdentifier`, `EvidenceCollector`, `GpsRule`, scheda tecnica. I tipi futuri QR/codice targhetta/NFC non hanno implementazioni, permessi o pulsanti. Le evidenze sono una collezione associata alla visita, non un campo esclusivo "GPS oppure QR".
+## Persistenza
 
-Entità relazionali: imprese, utenti, autorizzazioni territoriali, collettori, tratti, pozzetti, collegamenti versionati, dataset, regole, ispezioni, eventi di localizzazione, revisioni, operazioni di invio, anomalie, audit, scadenze, emissioni. Posizione cartografica e dispositivo non vengono fuse.
+Room v1 invariato: visits, outbox, packages, settings. JSON delle visite invariato per compatibilità server. Foto in filesDir/photos tramite FileProvider non esportato; metadati in settings per owner e inspectionId, insieme a eventi di identificazione. Acquisizione da galleria copiata nello spazio privato: non dipende dalla durata del permesso URI esterno. Le foto rimosse non compaiono più nella bozza; i file sono conservati per non rompere riferimenti di revisioni. Nessuna pulizia automatica dei media referenziati. Revisione archivia metadati fotografici precedenti. Esportazione demo include riferimenti, non immagini.
 
-## Versioni e dipendenze
+## Cartografia
 
-- Android Gradle Plugin 8.13.2, Gradle 8.13, Kotlin/Compose compiler 2.2.21, KSP 2.2.21-2.0.4.
-- Compose BOM 2025.10.01, Room 2.8.4, WorkManager 2.11.2, MapLibre Native 13.6.1, Play services location 21.3.0.
-- Versioni dirette Python in `backend/requirements.in`; dipendenze risolte in `requirements.lock`.
-- Risoluzione Android in `android/app/gradle.lockfile`; nessun `+` o `latest` nelle dipendenze dichiarate.
-- Build debug HTTP solo per il server locale; build principale HTTPS. Nessun servizio a pagamento, nessun deploy reale.
+MapLibre Native Android 13.6.1, mantenuto; raster OSM e layer GeoJSON per linea, pozzetti, selezione ocra, candidati blu, posizione e cerchio di precisione. Glifi inclusi per etichette. Attribuzione OSM visibile e controllo MapLibre cliccabile. Tile HTTPS, User-Agent identificabile Collettori/0.11 e cache HTTP 50 MB rispettosa delle intestazioni. Nessun prefetch né download offline massivo. Offline resta la geometria locale: la base OSM non è garantita. La connettività valida abilita il raster; errori mappa vengono mostrati senza perdere i dati.
 
-## Fonti tecniche ufficiali consultate
+Fonti verificate: [MapLibre Android](https://maplibre.org/maplibre-native/android/api/), [policy tile OSM](https://operations.osmfoundation.org/policies/tiles/), [attribuzione](https://www.openstreetmap.org/copyright). Produzione: provider adatto al carico e licenza offline se richiesta.
 
-- [MapLibre Native GeoJsonSource](https://maplibre.org/maplibre-native/android/api/-map-libre%20-native%20-android/org.maplibre.android.style.sources/-geo-json-source/index.html)
-- [MapLibre Style.Builder.fromJson](https://maplibre.org/maplibre-native/android/api/-map-libre%20-native%20-android/org.maplibre.android.maps/-style/-builder/from-json.html)
-- [MapLibre OfflineManager](https://maplibre.org/maplibre-native/android/api/-map-libre%20-native%20-android/org.maplibre.android.offline/-offline-manager/index.html): esaminato; la pipeline scelta usa dati locali espliciti, non presume importazione universale di MBTiles.
-- [CurrentLocationRequest.Builder](https://developers.google.com/android/reference/com/google/android/gms/location/CurrentLocationRequest.Builder)
-- [Room](https://developer.android.com/jetpack/androidx/releases/room), [WorkManager](https://developer.android.com/jetpack/androidx/releases/work), [AGP 8.13](https://developer.android.com/build/releases/agp-8-13-0-release-notes)
-- [FastAPI, sicurezza e hashing password](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/): usato hashing Argon2; il progetto impiega token opachi, non JWT.
-- [GDAL, specificità shapefile](https://gdal.org/en/stable/drivers/vector/shapefile.html): controllo dei file accessori/CRS/codifica; implementazione pilota con pyshp e pyproj.
-- [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/): nessun download massivo dai server standard.
+## Localizzazione e identificazione
 
-## Licenze e risorse
+LocationCapture usa FusedLocationProvider, richiesta foreground, nessun tracking in background. Permesso negato, timeout, precisione assente, mock e GPS disattivato restano eventi espliciti. GpsIdentification suggerisce candidati: raggio clamp(accuratezza + 5 m, 8 m, 55 m), rifiuta accuratezza >50 m, permesso approssimativo, mock, errore e misura più vecchia di 60 s (età del fix più tempo trascorso). Molto probabile solo candidato unico, accuratezza ≤10 m e distanza+accuratezza ≤15 m. Altrimenti possibile, multiplo o nessuno. Queste soglie sono ipotesi demo da validare sul campo.
 
-MapLibre e le altre librerie mantengono le proprie licenze upstream. I glifi Noto Sans provengono dal repository pubblico [maplibre/demotiles](https://github.com/maplibre/demotiles/tree/gh-pages/font); licenza Noto SIL Open Font License inclusa in `android/app/src/main/assets/glyphs/LICENSE-Noto.txt`. Sono risorse font, non cartografia OSM.
+La regola GpsRule del pilota resta indipendente e versionata, utilizzata per l'evidenza registrata. Il suggerimento di navigazione non è una certificazione. L'ispezione acquisisce nuovamente la posizione; non riusa automaticamente una vecchia misura di orientamento.
 
-Lo stile e il dataset sintetico sono prodotti per questo progetto. Per una base OSM o di altro fornitore occorre verificarne licenza, attribuzione e distribuzione offline prima dell'importazione. La scelta del formato locale non attribuisce diritti sui dati.
+## Backend
+
+FastAPI, SQLAlchemy, PostGIS e migrazioni iniziali conservati. Backend aggiornato ad accettare app_version 0.11 e 0.1 storica. Foto e tag non vengono inviati al server: futuro contratto API autenticato, storage e coda di upload separata necessari. Nessuna migration SQL aggiuntiva nella v0.11. L'integrazione futura deve separare successo dell'ispezione da quello di ogni allegato.

@@ -1,0 +1,364 @@
+{
+  "version": "00000000-0000-4000-8000-000000000011",
+  "area_id": "DEMO",
+  "name": "Trento · collettore fittizio",
+  "synthetic": true,
+  "attribution": "© OpenStreetMap contributors · infrastrutture sintetiche",
+  "osm": true,
+  "basemap": {
+    "type": "FeatureCollection",
+    "features": []
+  },
+  "glyph_ranges": [
+    "0-255"
+  ],
+  "coverage": [
+    11.11,
+    46.058,
+    11.12,
+    46.073
+  ],
+  "collectors": [
+    {
+      "id": "DEMO-TRENTO",
+      "name": "Trento · dimostrativo",
+      "synthetic": true,
+      "length_m": 1072
+    }
+  ],
+  "points": [
+    {
+      "id": "0992e9b1-9fcf-50f4-874c-88b3a672e8b2",
+      "code": "PZ-001",
+      "latitude": 46.06,
+      "longitude": 11.1135,
+      "chainage_m": 0,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "4dd63aee-1ca0-5273-a162-dcb32feeffab",
+      "code": "PZ-002",
+      "latitude": 46.06105,
+      "longitude": 11.114011770215441,
+      "chainage_m": 123.3,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "b46b5f7a-ebde-5002-8553-87c3d082d4ef",
+      "code": "PZ-003",
+      "latitude": 46.0621,
+      "longitude": 11.114476588393924,
+      "chainage_m": 245.4,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "21d5ca66-8080-5fd8-b015-c9cc89a9172d",
+      "code": "PZ-004",
+      "latitude": 46.06315,
+      "longitude": 11.114858997994641,
+      "chainage_m": 365.8,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "e1d456bb-e7ec-5e99-bf4e-878c29c739e2",
+      "code": "PZ-005",
+      "latitude": 46.0642,
+      "longitude": 11.11514371897073,
+      "chainage_m": 484.6,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "e25d6735-726a-5521-8edb-405236e1ac97",
+      "code": "PZ-006",
+      "latitude": 46.06525,
+      "longitude": 11.115339388857642,
+      "chainage_m": 602.4,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "596a0768-a9e7-5a05-8e82-9d5e25f5fae3",
+      "code": "PZ-007",
+      "latitude": 46.066300000000005,
+      "longitude": 11.115476448003225,
+      "chainage_m": 719.6,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "64a1f2fd-5057-54b9-bacf-689446fc21d1",
+      "code": "PZ-008",
+      "latitude": 46.067350000000005,
+      "longitude": 11.115599686708924,
+      "chainage_m": 836.7,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "0867ae6a-912b-5fe1-a25b-39808117986b",
+      "code": "PZ-009",
+      "latitude": 46.068400000000004,
+      "longitude": 11.115757279001878,
+      "chainage_m": 954.1,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    },
+    {
+      "id": "71045747-cb41-5362-8275-f16622b8dfea",
+      "code": "PZ-010",
+      "latitude": 46.06945,
+      "longitude": 11.115988987952933,
+      "chainage_m": 1072.2,
+      "state": "DA_ISPEZIONARE",
+      "last_inspection": null,
+      "collector_id": "DEMO-TRENTO",
+      "collectors": [
+        "DEMO-TRENTO"
+      ],
+      "area_id": "DEMO",
+      "uncertainty_m": 2,
+      "tag_associations": []
+    }
+  ],
+  "segments": [
+    {
+      "id": "51870209-4106-569e-86e9-cadd2b68c78c",
+      "collector": "DEMO-TRENTO",
+      "from_id": "0992e9b1-9fcf-50f4-874c-88b3a672e8b2",
+      "to_id": "4dd63aee-1ca0-5273-a162-dcb32feeffab",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.1135,
+            46.06
+          ],
+          [
+            11.114011770215441,
+            46.06105
+          ]
+        ]
+      }
+    },
+    {
+      "id": "aebc511f-bad2-5a21-8329-e61308d98520",
+      "collector": "DEMO-TRENTO",
+      "from_id": "4dd63aee-1ca0-5273-a162-dcb32feeffab",
+      "to_id": "b46b5f7a-ebde-5002-8553-87c3d082d4ef",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.114011770215441,
+            46.06105
+          ],
+          [
+            11.114476588393924,
+            46.0621
+          ]
+        ]
+      }
+    },
+    {
+      "id": "3ce08f7f-48c4-56c5-a22e-9bca3816acae",
+      "collector": "DEMO-TRENTO",
+      "from_id": "b46b5f7a-ebde-5002-8553-87c3d082d4ef",
+      "to_id": "21d5ca66-8080-5fd8-b015-c9cc89a9172d",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.114476588393924,
+            46.0621
+          ],
+          [
+            11.114858997994641,
+            46.06315
+          ]
+        ]
+      }
+    },
+    {
+      "id": "55f8ed42-9c87-5728-9d9e-fcb7a2c44e05",
+      "collector": "DEMO-TRENTO",
+      "from_id": "21d5ca66-8080-5fd8-b015-c9cc89a9172d",
+      "to_id": "e1d456bb-e7ec-5e99-bf4e-878c29c739e2",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.114858997994641,
+            46.06315
+          ],
+          [
+            11.11514371897073,
+            46.0642
+          ]
+        ]
+      }
+    },
+    {
+      "id": "505b5c46-ccce-5e42-acf9-f8626cfece74",
+      "collector": "DEMO-TRENTO",
+      "from_id": "e1d456bb-e7ec-5e99-bf4e-878c29c739e2",
+      "to_id": "e25d6735-726a-5521-8edb-405236e1ac97",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.11514371897073,
+            46.0642
+          ],
+          [
+            11.115339388857642,
+            46.06525
+          ]
+        ]
+      }
+    },
+    {
+      "id": "88f7896e-e066-59a9-bdd6-3560057a5ec3",
+      "collector": "DEMO-TRENTO",
+      "from_id": "e25d6735-726a-5521-8edb-405236e1ac97",
+      "to_id": "596a0768-a9e7-5a05-8e82-9d5e25f5fae3",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.115339388857642,
+            46.06525
+          ],
+          [
+            11.115476448003225,
+            46.066300000000005
+          ]
+        ]
+      }
+    },
+    {
+      "id": "df0a1bf1-4ccb-5f55-97f0-a473ed62ad06",
+      "collector": "DEMO-TRENTO",
+      "from_id": "596a0768-a9e7-5a05-8e82-9d5e25f5fae3",
+      "to_id": "64a1f2fd-5057-54b9-bacf-689446fc21d1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.115476448003225,
+            46.066300000000005
+          ],
+          [
+            11.115599686708924,
+            46.067350000000005
+          ]
+        ]
+      }
+    },
+    {
+      "id": "beef835b-ee9a-5bff-be9e-88351145cea9",
+      "collector": "DEMO-TRENTO",
+      "from_id": "64a1f2fd-5057-54b9-bacf-689446fc21d1",
+      "to_id": "0867ae6a-912b-5fe1-a25b-39808117986b",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.115599686708924,
+            46.067350000000005
+          ],
+          [
+            11.115757279001878,
+            46.068400000000004
+          ]
+        ]
+      }
+    },
+    {
+      "id": "676ace92-8e7b-5687-86fb-095a4c1d20b9",
+      "collector": "DEMO-TRENTO",
+      "from_id": "0867ae6a-912b-5fe1-a25b-39808117986b",
+      "to_id": "71045747-cb41-5362-8275-f16622b8dfea",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            11.115757279001878,
+            46.068400000000004
+          ],
+          [
+            11.115988987952933,
+            46.06945
+          ]
+        ]
+      }
+    }
+  ]
+}
