@@ -43,7 +43,7 @@ b9b09a3111edeb7038b5afe8afb786f8820654263b5df9bad3cb9decdee623a4
 ### APK demo autonoma 0.1-demo
 
 Compilazione riuscita. Manifest dell'APK controllato con aapt: identificativo
-`it.pat.collettori.pilot.demo`, etichetta `Collettori Demo`, permesso INTERNET
+`it.pat.collettori.pilot.demo`, etichetta `Collettori`, permesso INTERNET
 assente. Verificati nell'APK il dataset sintetico e tutti i font richiesti.
 SHA-256: `4c6b0ebfb6925699de41f5c7a606c8c50b0d714c464236dc3d4d3d40e7a01091`.
 Nessun telefono collegato: avvio, rendering e GPS della demo devono ancora essere

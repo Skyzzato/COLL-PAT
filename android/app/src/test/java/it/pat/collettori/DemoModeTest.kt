@@ -7,6 +7,7 @@ import org.json.JSONObject
 class DemoModeTest {
     @Test fun bundledDatasetIsSyntheticAndSelfContained(){
         val p=JSONObject(javaClass.classLoader!!.getResource("demo-package.json")!!.readText())
+        DemoMode.validateDataset(p)
         assertTrue(p.getBoolean("synthetic"))
         assertEquals(10,p.getJSONArray("points").length())
         assertEquals(9,p.getJSONArray("segments").length())

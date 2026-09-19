@@ -1,0 +1,1 @@
+<resources><style name="Theme.Collettori" parent="Theme.Collettori.Base"><item name="android:windowLightNavigationBar">true</item><item name="android:navigationBarColor">@color/icon_background</item></style></resources>

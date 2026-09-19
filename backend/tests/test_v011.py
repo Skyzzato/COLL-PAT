@@ -1,11 +1,13 @@
 import json
+import pytest
 from pathlib import Path
 from conftest import operation
 
 
-def test_v011_events_accepted_by_sync(setup):
+@pytest.mark.parametrize("version", ["0.11", "0.12"])
+def test_v011_events_accepted_by_sync(setup, version):
     payload = operation(setup)
-    payload["inspection"]["events"][0]["app_version"] = "0.11"
+    payload["inspection"]["events"][0]["app_version"] = version
     response = setup["client"].post("/api/sync", headers=setup["headers"], json=payload)
     assert response.status_code == 200, response.text
 

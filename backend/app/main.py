@@ -17,7 +17,7 @@ from .gps import evaluate
 from .gis import canonical
 from .reports import rows, snapshot, export_csv, export_xlsx, review_state
 
-app = FastAPI(title="Collettori PAT — pilota", version="0.1")
+app = FastAPI(title="Collettori", version="0.1")
 static = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static), name="static")
 

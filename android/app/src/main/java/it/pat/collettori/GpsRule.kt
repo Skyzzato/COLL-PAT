@@ -8,7 +8,8 @@ data class Rule(val version: String, val radius: Double, val accuracy: Double, v
     companion object { fun parse(p: JSONObject) = Rule(p.getString("version"), p.getDouble("radius_m"), p.getDouble("max_accuracy_m"), p.getDouble("max_age_s"), p.getDouble("timeout_s"), p.getDouble("max_map_uncertainty_m"), p.getDouble("earth_radius_m")) }
     fun json() = JSONObject().put("version",version).put("radius_m",radius).put("max_accuracy_m",accuracy).put("max_age_s",age).put("timeout_s",timeout).put("max_map_uncertainty_m",mapUncertainty).put("earth_radius_m",earth)
 }
-fun JSONObject.numberOrNull(key: String): Double? = if (has(key) && !isNull(key)) getDouble(key) else null
+fun JSONObject.numberOrNull(key: String): Double? = optDouble(key, Double.NaN).takeIf { it.isFinite() }
+fun validCoordinates(latitude: Double?, longitude: Double?) = latitude != null && longitude != null && latitude in -90.0..90.0 && longitude in -180.0..180.0
 fun JSONObject.boolOrNull(key: String): Boolean? = if (has(key) && !isNull(key)) getBoolean(key) else null
 fun JSONArray.objects(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
 

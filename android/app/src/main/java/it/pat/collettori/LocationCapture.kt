@@ -24,11 +24,12 @@ class LocationCapture(private val context:Context):EvidenceCollector{
         val coarse=context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
         val e=JSONObject().put("id",UUID.randomUUID().toString()).put("inspection_id",inspection.getString("id"))
             .put("manhole_id",inspection.getString("manhole_id")).put("user_id",inspection.getString("user_id")).put("device_id",inspection.getString("device_id"))
-            .put("dataset_id",inspection.getString("dataset_id")).put("rule_version",rule.version).put("app_version","0.11")
+            .put("dataset_id",inspection.getString("dataset_id")).put("rule_version",rule.version).put("app_version","0.12")
             .put("requested_at",Instant.now().toString()).put("permission",if(precise)"PRECISE" else if(coarse)"APPROXIMATE" else "DENIED")
         listOf("latitude","longitude","accuracy_m","age_s","provider","mock","error").forEach{e.put(it,JSONObject.NULL)}
         val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val enabled=manager.isProviderEnabled(LocationManager.GPS_PROVIDER)||manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        val enabled=if(Build.VERSION.SDK_INT>=28)manager.isLocationEnabled
+            else manager.isProviderEnabled(LocationManager.GPS_PROVIDER)||manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         if(!coarse&&!precise)e.put("error","permesso negato")
         else if(!enabled)e.put("error","localizzazione disattivata")
         else{
@@ -44,7 +45,8 @@ class LocationCapture(private val context:Context):EvidenceCollector{
                         .put("mock",if(Build.VERSION.SDK_INT>=31)location.isMock else location.isFromMockProvider)
                     if(age<0)e.put("error","riferimento temporale incoerente")
                 }
-            }catch(e1:SecurityException){e.put("error","permesso revocato")}
+            }catch(e1:kotlinx.coroutines.CancellationException){throw e1}
+            catch(e1:SecurityException){e.put("error","permesso revocato")}
             catch(e1:Exception){e.put("error","localizzazione non disponibile: "+e1.javaClass.simpleName)}
             finally{cancellation.cancel()}
         }

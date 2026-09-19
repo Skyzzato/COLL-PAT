@@ -1,4 +1,3 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
-    <application android:label="Collettori Demo" tools:replace="android:label" />
+    <!-- Online OSM tiles require INTERNET, inherited from the main manifest. -->
 </manifest>

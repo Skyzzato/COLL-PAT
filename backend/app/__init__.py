@@ -1,1 +1,1 @@
-"""Collettori PAT, pilota 0.11."""
+"""Collettori, pilota 0.11."""

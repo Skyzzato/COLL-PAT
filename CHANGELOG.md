@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12 — 2026-09-19
+
+Corretto il crash all’avvio: MapLibre inizializzato prima della configurazione HTTP. Ripristinato INTERNET per OSM nella demo. GPS assente/disattivato e coordinate invalide gestiti esplicitamente; eliminata la doppia attivazione del lifecycle mappa. Corretto il reset del testo durante il salvataggio automatico. Nome unico Collettori, logo originale tubo pixel art, splash e icone operative coerenti. Schema Room v1 invariato, nessuna migrazione o cancellazione dati. Collaudo su emulatore Android 35 documentato in `docs/VALIDATION-v0.12.md`.
+
 ## 0.11 — 2026-09-18 (pre-release)
 
 Mappa OSM e quattro tab demo; dataset Trento con 10 pozzetti. Identificazione GPS con accuratezza, candidati e conferma. Ispezioni con default regolari, anomalie e riepilogo. Foto locali con repository remoto non configurato. Contratti RFID/NFC/QR e associazioni tag. Documentazione completa e test aggiunti. Nessuna migration SQL; backend compatibile con app_version 0.11.
@@ -8,7 +12,7 @@ Mappa OSM e quattro tab demo; dataset Trento con 10 pozzetti. Identificazione GP
 
 ## 0.1-demo — prova autonoma Android
 
-- APK separato Collettori Demo, senza login, server, scadenza sessione o permesso Internet.
+- APK separato Collettori, senza login, server, scadenza sessione o permesso Internet.
 - 16 pozzetti e 15 tratti sintetici inclusi, mappa locale, GPS reale e schede persistenti.
 - Revisione locale ed esportazione demo distinta dai recuperi operativi; nessun invio o ricevuta server.
 

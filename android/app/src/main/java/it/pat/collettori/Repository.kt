@@ -18,9 +18,12 @@ import kotlinx.coroutines.sync.withLock
 class PilotApplication:Application(){
     lateinit var repository:Repository
     override fun onCreate(){super.onCreate()
+        // HttpRequestImpl's static initializer reads MapLibre's application context.
+        // Initialize the SDK before customizing its HTTP client (v0.11 startup crash).
+        org.maplibre.android.MapLibre.getInstance(this)
         org.maplibre.android.module.http.HttpRequestUtil.setOkHttpClient(okhttp3.OkHttpClient.Builder()
             .cache(okhttp3.Cache(java.io.File(cacheDir,"osm-http"),50L*1024*1024))
-            .addInterceptor{chain->chain.proceed(chain.request().newBuilder().header("User-Agent","Collettori/0.11 (Android demo; https://github.com/Skyzzato/Collettori)").build())}.build())
+            .addInterceptor{chain->chain.proceed(chain.request().newBuilder().header("User-Agent","Collettori/0.12 (Android demo; https://github.com/Skyzzato/Collettori)").build())}.build())
         repository=Repository(this);repository.schedule()}
 }
 
@@ -32,7 +35,7 @@ class Repository(val context:Context){
         check(BuildConfig.DEMO)
         val bytes=context.assets.open("demo-package.json").use{it.readBytes()}
         val p=JSONObject(String(bytes,Charsets.UTF_8))
-        check(p.getBoolean("synthetic"))
+        DemoMode.validateDataset(p)
         val rule=JSONObject(context.assets.open("gps-rule.json").bufferedReader().use{it.readText()})
         val hash=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
         db.withTransaction{

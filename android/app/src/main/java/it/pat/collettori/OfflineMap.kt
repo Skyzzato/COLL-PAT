@@ -35,9 +35,9 @@ fun localStyle(pack:JSONObject,points:List<JSONObject>,selected:String?,position
     val candidateIds=position?.optJSONArray("candidate_ids")
     source("candidates",fc(points.filter{p->candidateIds!=null && (0 until candidateIds.length()).any{candidateIds.getString(it)==p.getString("id")}}.map{feature(pointGeometry(it.getDouble("latitude"),it.getDouble("longitude")))}))
     val latitude=position?.numberOrNull("latitude");val longitude=position?.numberOrNull("longitude")
-    val hasPosition=latitude!=null && longitude!=null
+    val hasPosition=validCoordinates(latitude,longitude)
     source("device",fc(if(hasPosition)listOf(feature(pointGeometry(latitude!!,longitude!!)))else emptyList()))
-    val accuracy=position?.numberOrNull("accuracy_m")
+    val accuracy=position?.numberOrNull("accuracy_m")?.takeIf{it in 0.0..20_000_000.0}
     val circle=if(hasPosition && accuracy!=null){
         val ring=(0..64).map{index->val bearing=index*2*PI/64;val delta=accuracy/6371008.8;val lat=Math.toRadians(latitude!!);val lon=Math.toRadians(longitude!!)
             val y=asin(sin(lat)*cos(delta)+cos(lat)*sin(delta)*cos(bearing));val x=lon+atan2(sin(bearing)*sin(delta)*cos(lat),cos(delta)-sin(lat)*sin(y));listOf(Math.toDegrees(x),Math.toDegrees(y))}
@@ -79,7 +79,7 @@ fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position
     DisposableEffect(view,owner){
         val lifecycle=LifecycleEventObserver{_,event->when(event){Lifecycle.Event.ON_START->view.onStart();Lifecycle.Event.ON_RESUME->view.onResume();Lifecycle.Event.ON_PAUSE->view.onPause();Lifecycle.Event.ON_STOP->view.onStop();else->Unit}}
         owner.lifecycle.addObserver(lifecycle)
-        view.onStart();view.onResume()
+        // addObserver catches up with the owner's current state. Do not start twice.
         view.addOnDidFailLoadingMapListener{error("Mappa non caricata: $it. Dati e schede restano disponibili.")}
         view.getMapAsync{m->map=m;m.uiSettings.isAttributionEnabled=pack.optBoolean("osm");m.uiSettings.isLogoEnabled=false
             m.addOnMapClickListener{ll->val px=m.projection.toScreenLocation(ll);val hits=m.queryRenderedFeatures(RectF(px.x-20,px.y-20,px.x+20,px.y+20),"manholes")

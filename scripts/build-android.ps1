@@ -1,4 +1,4 @@
-param([switch]$Instrumented, [switch]$Demo)
+param([switch]$Instrumented, [switch]$Demo, [switch]$Full)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $androidRoot = Join-Path $projectRoot 'android'
@@ -17,6 +17,7 @@ Push-Location -LiteralPath $androidRoot
 try {
     $tasks = @(':app:assembleDebug', ':app:testDebugUnitTest', ':app:assembleDebugAndroidTest')
     if ($Demo) { $tasks += @(':app:assembleDemo', ':app:testDemoUnitTest') }
+    if ($Full) { $tasks = @('clean', 'build', ':app:assembleDebugAndroidTest') }
     if ($Instrumented) { $tasks += ':app:connectedDebugAndroidTest' }
     & '.\gradlew.bat' @tasks --no-daemon
     if ($LASTEXITCODE -ne 0) { throw "Build non riuscita: $LASTEXITCODE" }

@@ -30,7 +30,7 @@ class Event(Strict):
     permission: Literal["PRECISE", "APPROXIMATE", "DENIED"]
     mock: bool | None = None
     error: str | None = None
-    app_version: Literal["0.1", "0.11"]
+    app_version: Literal["0.1", "0.11", "0.12"]
     dataset_id: UUID
     rule_version: str
     local_evaluation: dict

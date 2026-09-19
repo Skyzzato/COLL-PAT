@@ -24,16 +24,16 @@ import org.json.JSONObject
     var error by remember{mutableStateOf("")}
     var pending by rememberSaveable{mutableStateOf<String?>(null)}
     var working by remember{mutableStateOf(false)}
-    LaunchedEffect(visit.id){photos=repository.list(visit)}
+    LaunchedEffect(visit.id){try{photos=repository.list(visit)}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){android.util.Log.e("Collettori","Elenco fotografie",e);error="Impossibile leggere le fotografie"}}
     fun attach(uri:Uri,copy:Boolean){scope.launch{working=true;try{repository.attach(visit,uri,copy);photos=repository.list(visit)}catch(e:Exception){error=e.message?:"Foto non acquisita"}finally{working=false}}}
     val camera=rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()){ok->
-        pending?.let{if(ok)attach(Uri.parse(it),false)else repo.context.contentResolver.delete(Uri.parse(it),null,null)};pending=null
+        pending?.let{if(ok)attach(Uri.parse(it),false)else {try{repo.context.contentResolver.delete(Uri.parse(it),null,null)}catch(e:Exception){android.util.Log.w("Collettori","Pulizia foto annullata",e)};error="Scatto annullato o non autorizzato"}};pending=null
     }
     val gallery=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->if(uri!=null)attach(uri,true)}
     Text("Foto · solo sul telefono",style=MaterialTheme.typography.titleMedium)
     Text("Upload non configurato. Per anomalie, aggiungi una foto del dettaglio.",style=MaterialTheme.typography.bodySmall)
     if(visit.operational=="BOZZA")Row {
-        OutlinedButton(enabled=!working,onClick={try{val uri=repository.newCapture();pending=uri.toString();camera.launch(uri)}catch(e:Exception){error="Fotocamera non disponibile; usa Galleria"}}){Text("Scatta foto")}
+        FilledTonalButton(enabled=!working,onClick={try{val uri=repository.newCapture();pending=uri.toString();camera.launch(uri)}catch(e:Exception){error="Fotocamera non disponibile; usa Galleria"}}){ActionIcon(R.drawable.ic_camera);Text("Scatta foto")}
         OutlinedButton(enabled=!working,onClick={try{gallery.launch("image/*")}catch(e:Exception){error="Galleria non disponibile"}}){Text("Galleria")}
     }
     if(working)LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -49,11 +49,11 @@ import org.json.JSONObject
             }.getOrNull()}
         }
         Row(Modifier.fillMaxWidth()){
-            bitmap?.let{Image(it.asImageBitmap(),"Foto dell'ispezione",Modifier.size(96.dp))}
+            bitmap?.let{Image(it.asImageBitmap(),"Foto dell'ispezione",Modifier.size(96.dp))}?:Text("Anteprima non disponibile",Modifier.width(96.dp),style=MaterialTheme.typography.bodySmall)
             Column(Modifier.weight(1f)){
                 Text(shown(photo.getString("createdAt")),style=MaterialTheme.typography.bodySmall)
                 Text("Locale · non inviata",style=MaterialTheme.typography.labelSmall)
-                if(visit.operational=="BOZZA")TextButton(enabled=!working,onClick={scope.launch{try{repository.remove(visit,photo);photos=repository.list(visit)}catch(e:Exception){error=e.message?:"Rimozione non riuscita"}}}){Text("Rimuovi")}
+                if(visit.operational=="BOZZA")TextButton(enabled=!working,onClick={scope.launch{try{repository.remove(visit,photo);photos=repository.list(visit)}catch(e:Exception){error=e.message?:"Rimozione non riuscita"}}}){ActionIcon(R.drawable.ic_trash);Text("Rimuovi")}
             }
         }
     }

@@ -34,7 +34,7 @@ def generate(folder: Path, count=16):
             for p in root.iterdir():z.write(p,p.name)
     config={"area_id":"DEMO","synthetic":True,"points":{"file":"points","key":"KEY","code":"NUMBER","uncertainty":"MAP_ERR"},
             "segments":{"file":"segments","key":"KEY","collector":"COLLECTOR","from":"START","to":"END"},
-            "basemap":"basemap.geojson","attribution":"Dati e base interamente sintetici — Collettori PAT pilota. Nessun manufatto reale."}
+            "basemap":"basemap.geojson","attribution":"Dati e base interamente sintetici — Collettori. Nessun manufatto reale."}
     (folder/"mapping.json").write_text(json.dumps(config,indent=2),encoding="utf-8")
     return folder/"synthetic.zip",config
 

@@ -26,9 +26,9 @@ import org.maplibre.android.geometry.LatLng
     var ready by remember{mutableStateOf(false)}
     var busy by remember{mutableStateOf(false)}
     var message by remember{mutableStateOf("")}
-    fun task(block:suspend()->Unit){scope.launch{busy=true;try{block()}catch(e:Exception){message=e.message?:"Operazione non riuscita"}finally{busy=false}}}
+    fun task(block:suspend()->Unit){scope.launch{busy=true;try{block()}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){android.util.Log.e("Collettori","Operazione non riuscita",e);message=e.message?:"Operazione non riuscita"}finally{busy=false}}}
     LaunchedEffect(Unit){task{repo.prepareDemo();ready=true}}
-    if(!ready){Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp)){Text("Collettori · v0.11");Text(message.ifBlank{"Preparazione demo…"})};return}
+    if(!ready){AppLoading(message){task{message="";repo.prepareDemo();ready=true}};return}
     val packs by repo.dao.packages(repo.owner()).collectAsState(emptyList())
     val visits by repo.dao.visits(repo.owner()).collectAsState(emptyList())
     val pack=packs.firstOrNull{it.id=="00000000-0000-4000-8000-000000000011"}?:return
@@ -58,13 +58,16 @@ import org.maplibre.android.geometry.LatLng
             repo.dao.setting(Setting(visit.owner,"identification:"+visit.id,JSONObject().put("method","GPS").put("manholeId",visit.manholeId).put("confirmedAt",java.time.Instant.now().toString()).put("gps",e).put("result",GpsIdentification.identify(originalPoints,e).state).toString()))
         }else{
             val lat=e.numberOrNull("latitude");val lon=e.numberOrNull("longitude")
-            if(lat!=null&&lon!=null){tick++;center=LatLng(lat,lon) to tick}
+            if(validCoordinates(lat,lon)){tick++;center=LatLng(lat!!,lon!!) to tick}
         }
     }
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){
         val id=pendingVisit;pendingVisit=null;task{capture(id)}
     }
-    fun locate(id:String?=null){pendingVisit=id;permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))}
+    fun locate(id:String?=null){
+        if(repo.context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED || repo.context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED)task{capture(id)}
+        else {pendingVisit=id;permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))}
+    }
     val editor=visits.firstOrNull{it.id==editorId}
     if(editor!=null){
         var editorPack by remember(editor.id){mutableStateOf<OfflinePackage?>(null)}
@@ -82,9 +85,9 @@ import org.maplibre.android.geometry.LatLng
         message="Esportazione salvata; le immagini restano sul telefono"
     }}
     val online=NetworkStatus()
-    Scaffold(bottomBar={NavigationBar{listOf("Mappa","Pozzetti","Ispezioni","Altro").forEach{title->NavigationBarItem(selected=tab==title,onClick={tab=title},icon={Text(when(title){"Mappa"->"◎";"Pozzetti"->"▦";"Ispezioni"->"✓";else->"…"})},label={Text(title)})}}}){padding->
+    Scaffold(bottomBar={NavigationBar{listOf("Mappa","Pozzetti","Ispezioni","Altro").forEach{title->NavigationBarItem(selected=tab==title,onClick={tab=title},icon={Icon(androidx.compose.ui.res.painterResource(when(title){"Mappa"->R.drawable.ic_map;"Pozzetti"->R.drawable.ic_pin;"Ispezioni"->R.drawable.ic_history;else->R.drawable.ic_info}),contentDescription=null)},label={Text(title)})}}}){padding->
         Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding()){
-            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),horizontalArrangement=Arrangement.SpaceBetween){Text("Collettori",style=MaterialTheme.typography.titleLarge);Text("DEMO · v0.11",style=MaterialTheme.typography.labelLarge)}
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),horizontalArrangement=Arrangement.SpaceBetween){Text("Collettori",style=MaterialTheme.typography.titleLarge);Text("DEMO · v0.12",style=MaterialTheme.typography.labelLarge)}
             Text("Trento · 10 pozzetti fittizi · nessuna infrastruttura PAT",Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.labelSmall)
             if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
             if(message.isNotBlank())Row(Modifier.padding(horizontal=16.dp)){Text(message,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall);TextButton(onClick={message=""}){Text("Chiudi")}}
@@ -94,17 +97,18 @@ import org.maplibre.android.geometry.LatLng
                         val mapData=remember(data,online){JSONObject(data.toString()).put("osm",online)}
                         val displayPosition=remember(position,identification){position?.let{JSONObject(it.toString()).put("candidate_ids",org.json.JSONArray(identification.candidates))}}
                         OfflineMap(mapData,points,selected,displayPosition,center,Modifier.fillMaxSize(),{selected=it},{message=it})
-                        Card(Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth()){
+                        Card(Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface.copy(alpha=.96f))){
                             Column(Modifier.padding(12.dp)){
                                 Text(identification.state,style=MaterialTheme.typography.labelLarge)
                                 Text(precisionText(position),style=MaterialTheme.typography.bodySmall)
+                                position?.optString("error")?.takeIf{it.isNotBlank()&&it!="null"}?.let{Text(it,style=MaterialTheme.typography.bodySmall)}
                                 if(!online)Text("Senza rete · base OSM non disponibile; rete demo locale",style=MaterialTheme.typography.bodySmall)
                                 if(identification.candidates.size==1)TextButton(onClick={selected=identification.candidates.first()}){Text("Verifica "+points.first{it.getString("id")==identification.candidates.first()}.getString("code"))}
                             }
                         }
                         Column(Modifier.align(Alignment.BottomEnd).padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                            FloatingActionButton(onClick={tick++;center=LatLng(46.0647,11.1154) to -tick}){Text("Rete",Modifier.padding(12.dp))}
-                            ExtendedFloatingActionButton(onClick={if(!busy)locate()}){Text("La mia posizione")}
+                            SmallFloatingActionButton(containerColor=MaterialTheme.colorScheme.surface,onClick={tick++;center=LatLng(46.0647,11.1154) to -tick}){Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_map),"Mostra collettore")}
+                            ExtendedFloatingActionButton(containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary,onClick={if(!busy)locate()}){ActionIcon(R.drawable.ic_target);Text("Centra posizione")}
                         }
                     }
                     Text("© OpenStreetMap contributors · OSM online",Modifier.padding(horizontal=12.dp),style=MaterialTheme.typography.labelSmall)
@@ -135,11 +139,11 @@ import org.maplibre.android.geometry.LatLng
                     }}}
                 }
                 else->Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())){
-                    Text("Collettori v0.11",style=MaterialTheme.typography.headlineMedium)
+                    Text("Collettori v0.12",style=MaterialTheme.typography.headlineMedium)
                     Text("Dataset sintetico lungo circa 1 km presso Trento. Il GPS usa la posizione reale del dispositivo.")
                     Text("Ispezioni, bozze e foto sono locali. Nessun upload o account server nella demo. La base OpenStreetMap richiede rete; pozzetti e tracciato sono disponibili offline.")
                     Text("Identificazione futura: NFC/HF, lettori RFID esterni e QR. Nessun lettore simulato. La selezione manuale rimane un'alternativa.")
-                    OutlinedButton(onClick={task{exportText=repo.recoveryBundle();export.launch("Collettori-v0.11-ispezioni.json")}}){Text("Esporta ispezioni JSON")}
+                    OutlinedButton(onClick={task{exportText=repo.recoveryBundle();export.launch("Collettori-v0.12-ispezioni.json")}}){Text("Esporta ispezioni JSON")}
                     Text("L'esportazione contiene coordinate e riferimenti fotografici locali, non le immagini. Disinstallare l'app elimina i dati locali.")
                 }
             }
@@ -160,9 +164,9 @@ import org.maplibre.android.geometry.LatLng
                 val visit=existing?:repo.begin(point,pack,if(tab=="Mappa")"MAP" else "LIST")
                 editorId=visit.id;selected=null;message=""
                 if(JSONObject(visit.body).getJSONArray("events").length()==0)locate(visit.id)
-            }},modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)){Text("Conferma e avvia ispezione")}
+            }},modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)){ActionIcon(R.drawable.ic_check);Text("Avvia ispezione")}
             Row{
-                TextButton(onClick={selected=null;tab="Ispezioni"}){Text("Ispezioni")}
+                TextButton(onClick={selected=null;tab="Ispezioni"}){ActionIcon(R.drawable.ic_history);Text("Ispezioni precedenti")}
                 val next=points.getOrNull(points.indexOf(point)+1)
                 if(next!=null)TextButton(onClick={selected=next.getString("id");tick++;center=LatLng(next.getDouble("latitude"),next.getDouble("longitude")) to tick}){Text("Prossimo: "+next.getString("code"))}
             }
