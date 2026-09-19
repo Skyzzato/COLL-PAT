@@ -67,7 +67,7 @@ Avvia/Salva ispezione sono primari; Scatta foto è tonale; parziale e impediment
 
 ## TEST E VERIFICA INSTALLAZIONE PULITA
 
-Ambiente: Android 15/API 35 Google APIs x86_64, emulatore locale dedicato, WHPX, rendering software, display 432×960. I test hardware non sono stati eseguiti su un telefono fisico. Logcat integrali e screenshot sono conservati in `.tools/crash-v011/` ed esportati in `local-output/Collettori-v0.12-evidenze.zip`, esclusi da Git.
+Ambiente: Android 15/API 35 Google APIs x86_64, emulatore locale dedicato, WHPX, rendering software, display 432×960. I test hardware non sono stati eseguiti su un telefono fisico. Logcat integrali e screenshot sono conservati in `.tools/crash-v011/` ed esportati in `local-output/verification/v0.12/Collettori-v0.12-evidenze.zip`, esclusi da Git.
 
 | Prova realmente eseguita | Esito | Evidenza / limite |
 |---|---|---|
@@ -112,7 +112,9 @@ Warning residui del runtime emulato: variante CPU x86_64, file opzionale `base.d
 
 Eseguiti `clean`, `build`, unit test debug/demo/release, lint, APK debug/demo/release e compilazione test strumentali. `BUILD SUCCESSFUL`. Lint: 0 errori, 28 warning (aggiornamenti dipendenze/target suggeriti, uso KTX/Timber e regole backup Android 12). Risolto l'unico errore di compatibilità introdotto nel restyling: attributo navigation bar API 27 spostato in `values-v27`. Nessun aggiornamento indiscriminato delle librerie.
 
-| Artefatto in `local-output/` | SHA-256 |
+Gli APK debug e release di test sono conservati in `local-output/verification/v0.12/`; la demo corrente resta in `local-output/`.
+
+| Artefatto | SHA-256 |
 |---|---|
 | `Collettori-v0.12-demo.apk` — da installare per il dataset locale | `32e5bfdf9e88d7423590dc93a64afea0757cc41b8101d0d877d47f67182034c8` |
 | `Collettori-v0.12-debug.apk` — pilota con accesso server | `cb44f3320dc83b5b8c62440e19f71d854c3ed317b998a577c842f93b77bc9cd1` |
@@ -124,6 +126,6 @@ VersionCode 12, versionName 0.12 / 0.12-demo: progressione coerente 0.1 → 0.11
 
 ## GIT E PROBLEMI ANCORA APERTI
 
-Branch `fix/v0.12-startup`; commit locale di consegna identificabile con `git log -1`. Nessun nuovo tag e nessun tag pubblicato sovrascritto. Push non eseguito. Prima del commit controllati status, diff e file da includere: APK, log, immagine emulatore, cache, chiavi e `.env` restano esclusi.
+Collaudo sul branch `fix/v0.12-startup`, commit applicativo `ae641b8`. La successiva pubblicazione v0.12 è descritta nelle [note di rilascio](RELEASE-v0.12.md): allineamento fast-forward di `main`, nuovo tag v0.12, nessun tag precedente sovrascritto. Prima del commit controllati status, diff e file da includere: APK, log, immagine emulatore, cache, chiavi e `.env` restano esclusi.
 
 Nessun crash applicativo residuo osservato negli scenari eseguiti. Restano da verificare dispositivi fisici/OEM e Android 8; GPS sul campo e qualità fotografica reale non sono attestati dal test emulato. Rimangono i limiti funzionali già esistenti: foto locali senza upload, mappa base offline non garantita, export JSON senza file immagine, NFC/RFID futuro. I warning lint residui sono documentati sopra e non sono stati nascosti.

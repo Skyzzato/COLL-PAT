@@ -4,7 +4,7 @@ Demo Android per trovare, identificare e ispezionare pozzetti di collettori inte
 
 ## Prova della demo
 
-Installare `Collettori-v0.12-demo.apk` da `local-output/` dopo la build. Android 8 o successivo, Google Play services per localizzazione. Nessun account richiesto. APK demo separato dall'app pilota (`it.pat.collettori.pilot.demo`).
+Installare **[Collettori-v0.12-demo.apk](https://github.com/Skyzzato/Collettori/releases/download/v0.12/Collettori-v0.12-demo.apk)** dalla [prerelease v0.12](https://github.com/Skyzzato/Collettori/releases/tag/v0.12). Android 8 o successivo, Google Play services per localizzazione. Nessun account richiesto. APK demo separato dall'app pilota (`it.pat.collettori.pilot.demo`).
 
 1. Mappa → Centra posizione: mostra distanza, precisione e candidati, senza selezione automatica.
 2. Toccare un pozzetto → confermare il codice → Avvia ispezione.
@@ -43,7 +43,7 @@ Per il server: creare una venv Python 3.12, installare `backend/requirements.loc
 - `demo/trento-v0.11.json`: sorgente demo modificabile, 10 pozzetti PZ-001…PZ-010 e 9 segmenti, circa 1,08 km presso Trento.
 - `scripts/build_demo_asset.py`: copia deterministica del dataset nell'APK.
 - `shared/`: regole GPS del pilota e casi condivisi.
-- `docs/`: architettura, analisi funzionale, modello dati, roadmap e collaudo.
+- `docs/`: [indice della documentazione](docs/README.md), note di rilascio e collaudi attuali e storici.
 - `supabase/migrations/`: schema iniziale esistente; nessuna nuova migration per v0.12.
 
 Il vecchio shapefile sintetico resta per i test di importazione backend: non è il dataset della nuova demo. Aggiornando l'APK, vecchi pacchetti e ispezioni rimangono conservati; la demo apre sempre il pacchetto v0.11.
@@ -59,3 +59,7 @@ Vedi [analisi funzionale](docs/ANALISI_FUNZIONALE.md), [architettura](docs/ARCHI
 La v0.12 corregge il crash di avvio della v0.11 (inizializzazione MapLibre prima del client HTTP), ripristina INTERNET nella variante demo e introduce il logo originale del tubo pixel art. Il dataset rimane quello della v0.11.
 
 Build completa: `scripts/build-android.ps1 -Full`. Test su dispositivo: `gradlew.bat :app:connectedDebugAndroidTest`; per la variante demo: `gradlew.bat :app:connectedDemoAndroidTest -PtestBuildType=demo`.
+
+## Artefatti locali
+
+`local-output/Collettori-v0.12-demo.apk` è la copia installabile corrente. `local-output/archive/` conserva versioni precedenti; `local-output/verification/v0.12/` contiene build e Logcat integrali di collaudo; `local-output/releases/v0.12/` contiene il pacchetto pubblico con checksum. Cache, SDK di test e strumenti temporanei restano in `.tools/`, esclusa da Git.
