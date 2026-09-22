@@ -12,9 +12,11 @@ android {
         applicationId = "it.pat.collettori.pilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "0.12"
+        versionCode = 13
+        versionName = "0.13"
         buildConfigField("boolean", "DEMO", "false")
+        buildConfigField("boolean", "DEV_ADMIN", "false")
+        buildConfigField("boolean", "PHOTO_UPLOAD_SIMULATED", "true")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -23,6 +25,7 @@ android {
             applicationIdSuffix = ".demo"
             versionNameSuffix = "-demo"
             buildConfigField("boolean", "DEMO", "true")
+            buildConfigField("boolean", "DEV_ADMIN", "true")
             matchingFallbacks += listOf("debug")
         }
     }

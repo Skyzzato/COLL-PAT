@@ -1,27 +1,17 @@
-# Architettura — v0.11
+# Architettura COLL-PAT v0.13
 
-## Componenti
+La UI Compose condivide catalogo, filtri e navigazione. MapLibre è inizializzato in Application **prima** del client HTTP; la mappa resta montata cambiando scheda, le sorgenti GeoJSON sono aggiornate senza ricaricare tutto lo stile. Camera salvabile e liste con stato conservato. Splash applicativo asincrono di almeno 3 secondi al primo avvio del processo, con preparazione locale parallela e timeout recuperabile; nessuna rete necessaria.
 
-`PilotApplication` crea Repository e client cartografico. `MainActivity` instrada la build demo a `DemoWorkspace`; mantiene il flusso Pilot autenticato. DemoWorkspace gestisce le quattro schede, conferma del pozzetto, selezione del dataset, GPS e ripresa della bozza. `InspectionEditor` è condiviso: riepilogo compatto nella demo, controlli espandibili, revisioni e validazioni. `PhotoPanel` gestisce i contratti Android TakePicture/GetContent e anteprime decodificate fuori dal thread UI.
+Room v2 (`pilot-v1.db`) è l'archivio di lavoro: schede, anagrafica, importazioni, audit, preferenze e outbox. Migrazione 1→2 aggiunge tabelle/colonne; conserva i body e sospende le code precedenti. Snapshot del catalogo all'inizio della scheda per evitare di cambiare il punto di riferimento delle evidenze.
 
-`Repository` conserva pacchetti, visite, eventi e coda transazionale. `PhotoRepository` separa media privati e metadati da `RemotePhotoStorage`; l'implementazione non configurata restituisce un errore, mai una ricevuta falsa. Non aggiunge URI locali al payload del server pilota. `Identification.kt` definisce metodo, associazione tag e servizio di identificazione; GPS è l'unico adattatore implementato. Gli enum/contratti QR preesistenti restano compatibili.
+Autosalvataggi ordinati in scope applicativo; uscita e registrazione attendono le scritture precedenti. Un mutex serializza le mutazioni e la transazione salva scheda+outbox prima del feedback. Le scritture tardive non riportano una scheda registrata allo stato bozza. Doppio tap idempotente sulla stessa scheda, UUID nuovo per ogni nuovo sopralluogo.
 
-## Persistenza
+WorkManager: vincolo rete, lavoro univoco e backoff; recupera gli `IN_CORSO`. Una coda è legata a URL, utente Auth, progetto e generazione. Auth scaduta sospende; payload invalidi/conflitti diventano terminali e non vengono riaccodati automaticamente. Un errore dell'anagrafica blocca le schede dipendenti. Creazione precede annullamento; nessuna cancellazione locale della creazione già accodata.
 
-Room v1 invariato: visits, outbox, packages, settings. JSON delle visite invariato per compatibilità server. Foto in filesDir/photos tramite FileProvider non esportato; metadati in settings per owner e inspectionId, insieme a eventi di identificazione. Acquisizione da galleria copiata nello spazio privato: non dipende dalla durata del permesso URI esterno. Le foto rimosse non compaiono più nella bozza; i file sono conservati per non rompere riferimenti di revisioni. Nessuna pulizia automatica dei media referenziati. Revisione archivia metadati fotografici precedenti. Esportazione demo include riferimenti, non immagini.
+RPC `coll_pat_apply`: identifica l'autore dalla sessione Auth, verifica ruolo/progetto, blocca la riga progetto, confronta generazione e contenuto dell'operazione, scrive e rilascia ricevuta atomicamente. Retry con risposta persa restituisce la stessa ricevuta. Tutte le tabelle private hanno RLS attiva e nessun DML client; funzioni SECURITY DEFINER con `search_path=''`, riferimenti qualificati ed EXECUTE solo a authenticated. Nessuna API per autoassegnarsi ruoli.
 
-## Cartografia
+Reset e invii condividono il blocco della riga progetto. Backup con token legato a revisione ispezioni, autore, generazione e scadenza; se arrivano nuove schede occorre un nuovo backup. Il reset elimina solo schede/dipendenze del progetto, incrementa la generazione e conserva log minimo e anagrafica. Al ritorno online le vecchie operazioni sono sospese, mai rietichettate.
 
-MapLibre Native Android 13.6.1, mantenuto; raster OSM e layer GeoJSON per linea, pozzetti, selezione ocra, candidati blu, posizione e cerchio di precisione. Glifi inclusi per etichette. Attribuzione OSM visibile e controllo MapLibre cliccabile. Tile HTTPS, User-Agent identificabile Collettori/0.11 e cache HTTP 50 MB rispettosa delle intestazioni. Nessun prefetch né download offline massivo. Offline resta la geometria locale: la base OSM non è garantita. La connettività valida abilita il raster; errori mappa vengono mostrati senza perdere i dati.
+Importazione grande: chunk privati, idempotenti e ordinati; elenco esplicito delle ricevute nella pubblicazione finale. La validazione e la scrittura dell'intero catalogo avvengono in un'unica transazione. Nessun catalogo parzialmente pubblico. La controparte locale salva tutti gli oggetti e la coda in una transazione Room.
 
-Fonti verificate: [MapLibre Android](https://maplibre.org/maplibre-native/android/api/), [policy tile OSM](https://operations.osmfoundation.org/policies/tiles/), [attribuzione](https://www.openstreetmap.org/copyright). Produzione: provider adatto al carico e licenza offline se richiesta.
-
-## Localizzazione e identificazione
-
-LocationCapture usa FusedLocationProvider, richiesta foreground, nessun tracking in background. Permesso negato, timeout, precisione assente, mock e GPS disattivato restano eventi espliciti. GpsIdentification suggerisce candidati: raggio clamp(accuratezza + 5 m, 8 m, 55 m), rifiuta accuratezza >50 m, permesso approssimativo, mock, errore e misura più vecchia di 60 s (età del fix più tempo trascorso). Molto probabile solo candidato unico, accuratezza ≤10 m e distanza+accuratezza ≤15 m. Altrimenti possibile, multiplo o nessuno. Queste soglie sono ipotesi demo da validare sul campo.
-
-La regola GpsRule del pilota resta indipendente e versionata, utilizzata per l'evidenza registrata. Il suggerimento di navigazione non è una certificazione. L'ispezione acquisisce nuovamente la posizione; non riusa automaticamente una vecchia misura di orientamento.
-
-## Backend
-
-FastAPI, SQLAlchemy, PostGIS e migrazioni iniziali conservati. Backend aggiornato ad accettare app_version 0.11 e 0.1 storica. Foto e tag non vengono inviati al server: futuro contratto API autenticato, storage e coda di upload separata necessari. Nessuna migration SQL aggiuntiva nella v0.11. L'integrazione futura deve separare successo dell'ispezione da quello di ogni allegato.
+Sessioni cifrate con Android Keystore. La chiave client è pubblica, mai service_role/secret o password PostgreSQL. Le credenziali legacy restano private e richiedono un collegamento Auth esplicito; l'identità demo non viene automaticamente trasformata in autore remoto. Il backend Python resta storico, non obbligatorio.

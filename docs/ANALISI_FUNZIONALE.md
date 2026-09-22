@@ -1,3 +1,5 @@
+> Documento storico del pilota precedente. Per COLL-PAT v0.13 vedere [indice corrente](README.md).
+
 # Analisi funzionale — v0.11
 
 ## Stato iniziale, rilevato prima delle modifiche

@@ -35,7 +35,7 @@ object GpsRule {
     }
     fun evaluate(e: JSONObject, point: JSONObject, points: List<JSONObject>, p: Rule): JSONObject {
         val lat=e.numberOrNull("latitude");val lon=e.numberOrNull("longitude")
-        val d=if(lat==null || lon==null)null else distance(lat,lon,point.getDouble("latitude"),point.getDouble("longitude"),p.earth)
+        val d=if(!validCoordinates(lat,lon))null else distance(lat!!,lon!!,point.getDouble("latitude"),point.getDouble("longitude"),p.earth)
         val ambiguous=d!=null && points.count{distance(lat!!,lon!!,it.getDouble("latitude"),it.getDouble("longitude"),p.earth)<=p.radius}>1
         return decide(d,e.numberOrNull("accuracy_m"),e.numberOrNull("age_s"),point.numberOrNull("uncertainty_m"),e.getString("permission"),e.boolOrNull("mock"),ambiguous,if(e.isNull("error"))null else e.optString("error"),p)
             .put("rule_version",p.version).put("parameters",p.json()).put("ambiguous",ambiguous)

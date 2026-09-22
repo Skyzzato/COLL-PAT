@@ -1,4 +1,4 @@
-name: Collaudo manuale pilota
+name: COLL-PAT — collaudo Android e SQL
 on: workflow_dispatch
 jobs:
   backend-postgis:
@@ -13,6 +13,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 5s --health-retries 20
     env:
       POSTGIS_TEST_DATABASE_URL: postgresql+psycopg://postgres:isolated-ci-test-password@127.0.0.1:5432/pilot_tests
+      COLL_PAT_SQL_TEST_URL: postgresql://postgres:isolated-ci-test-password@127.0.0.1:5432/pilot_tests
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

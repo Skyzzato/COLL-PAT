@@ -31,7 +31,7 @@ import org.json.JSONObject
     }
     val gallery=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->if(uri!=null)attach(uri,true)}
     Text("Foto · solo sul telefono",style=MaterialTheme.typography.titleMedium)
-    Text("Upload non configurato. Per anomalie, aggiungi una foto del dettaglio.",style=MaterialTheme.typography.bodySmall)
+    Text("Caricamento foto simulato; immagini conservate sul telefono. I dati della scheda vengono inviati separatamente.",style=MaterialTheme.typography.bodySmall)
     if(visit.operational=="BOZZA")Row {
         FilledTonalButton(enabled=!working,onClick={try{val uri=repository.newCapture();pending=uri.toString();camera.launch(uri)}catch(e:Exception){error="Fotocamera non disponibile; usa Galleria"}}){ActionIcon(R.drawable.ic_camera);Text("Scatta foto")}
         OutlinedButton(enabled=!working,onClick={try{gallery.launch("image/*")}catch(e:Exception){error="Galleria non disponibile"}}){Text("Galleria")}

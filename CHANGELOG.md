@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.13 — COLL-PAT (prerelease)
+
+- Rinomina prodotto e repository, versione 13, splash asincrono con logo originale.
+- Catalogo Trento/Lavis, anagrafica completa, selezione multipla e visibilità locale.
+- Nuova scheda ordinaria/esterna/impedimento, autosave, audit GPS/ispezioni; rimosso il nuovo flusso parziale.
+- Room v2 e outbox; Supabase Auth/RPC/PostGIS diretti, idempotenza e reset generazionale.
+- Importazione ZIP/shapefile Android, mapping/provenienza e staging atomico; admin temporaneo nella demo.
+- Cache unica 200 MiB, calendario Europe/Rome, documentazione e test aggiornati.
+- Migrazioni remote e reset iniziale non eseguiti: timeout del collegamento configurato. Foto locali, upload simulato.
+
 ## 0.12 — 2026-09-19
 
 Corretto il crash all’avvio: MapLibre inizializzato prima della configurazione HTTP. Ripristinato INTERNET per OSM nella demo. GPS assente/disattivato e coordinate invalide gestiti esplicitamente; eliminata la doppia attivazione del lifecycle mappa. Corretto il reset del testo durante il salvataggio automatico. Nome unico Collettori, logo originale tubo pixel art, splash e icone operative coerenti. Schema Room v1 invariato, nessuna migrazione o cancellazione dati. Collaudo su emulatore Android 35 documentato in `docs/VALIDATION-v0.12.md`.

@@ -22,11 +22,17 @@ class StartupWorkflowTest {
     @Test fun sdkConfiguredBeforeHttpClientAndActivityCanRecreate() {
         assertEquals(context.applicationContext,org.maplibre.android.MapLibre.getApplicationContext())
         assertEquals(PackageManager.PERMISSION_GRANTED,context.checkSelfPermission(Manifest.permission.INTERNET))
+        val app=context.applicationContext as PilotApplication
+        instrumentation.runOnMainSync{app.splashFinished=false}
+        val started=android.os.SystemClock.elapsedRealtime()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            Thread.sleep(4000)
+            while(!app.splashFinished&&android.os.SystemClock.elapsedRealtime()-started<20000)Thread.sleep(25)
+            assertTrue("Cold splash initialization must finish",app.splashFinished)
+            assertTrue("Cold splash must last at least three seconds",android.os.SystemClock.elapsedRealtime()-started>=AppSpec.SPLASH_MILLIS)
             scenario.onActivity { assertFalse(it.isFinishing) }
             scenario.recreate()
-            Thread.sleep(3000)
+            Thread.sleep(250)
+            assertTrue("Recreation must not reset the process splash",app.splashFinished)
             scenario.onActivity {
                 assertFalse(it.isFinishing)
                 assertTrue(it.window.decorView.isAttachedToWindow)
@@ -39,9 +45,9 @@ class StartupWorkflowTest {
     @Test fun demoInspectionDefaultsEditSaveReopenAndPhoto()=runBlocking {
         assumeTrue(BuildConfig.DEMO)
         repo.prepareDemo()
-        val pack=repo.dao.packagesNow(repo.owner()).first{it.id.endsWith("0011")}
+        val pack=repo.dao.packagesNow(repo.owner()).first{it.id==AppSpec.PACKAGE}
         val points=JSONObject(pack.body).getJSONArray("points").objects()
-        assertEquals(10,points.size)
+        assertEquals(16,points.size)
         val visit=repo.begin(points.first(),pack,"LIST")
         val body=JSONObject(visit.body)
         val sheet=body.getJSONObject("sheet")
@@ -66,9 +72,9 @@ class StartupWorkflowTest {
         try {
             val saved=reopened.dao.visit(visit.id,visit.owner)!!
             assertEquals("COMPLETO",saved.operational)
-            assertEquals("DEMO_LOCALE",saved.sync)
+            assertEquals("IN_ATTESA",saved.sync)
             assertEquals(1,PhotoRepository(reopened).list(saved).size)
-            assertEquals(0,reopened.dao.allPending(visit.owner).size)
+            assertEquals(1,reopened.dao.pendingVisit(visit.id).size)
         } finally {reopened.db.close()}
         Unit
     }

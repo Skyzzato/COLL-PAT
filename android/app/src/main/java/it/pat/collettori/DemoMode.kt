@@ -10,12 +10,12 @@ object DemoMode {
     fun validateDataset(p:JSONObject) {
         require(p.getBoolean("synthetic")){"Dataset dimostrativo non riconosciuto"}
         val points=p.getJSONArray("points").objects()
-        require(points.size==10){"Dataset incompleto: previsti 10 pozzetti"}
+        require(points.size==16){"Dataset incompleto: previsti 16 manufatti sintetici"}
         require(points.all{validCoordinates(it.numberOrNull("latitude"),it.numberOrNull("longitude"))}){"Coordinate demo non valide"}
         val ids=points.map{it.getString("id")}.toSet()
         require(ids.size==points.size){"Identificativi pozzetti duplicati"}
         val segments=p.getJSONArray("segments").objects()
-        require(segments.size==9){"Tracciato demo incompleto"}
+        require(segments.size==14){"Tracciato demo incompleto"}
         for(segment in segments) {
             require(segment.getString("from_id") in ids && segment.getString("to_id") in ids){"Riferimento del tracciato non valido"}
             val geometry=segment.getJSONObject("geometry")
@@ -29,7 +29,7 @@ object DemoMode {
         }
     }
     fun session() = JSONObject().put("base",base).put("user_id",user)
-        .put("username","Operatore demo").put("role","DEMO LOCALE")
+        .put("username","Operatore locale").put("role","LOCAL").put("project_id",AppSpec.LOCAL_PROJECT).put("protocol",AppSpec.PROTOCOL)
         .put("offline_until","2099-01-01T00:00:00Z")
     fun catalog(rule:JSONObject) = JSONObject().put("rule",rule)
         .put("datasets",JSONArray()).put("deadlines",JSONArray())

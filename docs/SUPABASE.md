@@ -1,141 +1,35 @@
-> Documento del pilota originario: i riferimenti v0.1 e relativi collaudi sono storici. Per la demo corrente v0.11 consultare [README](../README.md) e [collaudo v0.11](VALIDATION-v0.11.md). Foto locali e nuova UX sono descritti lì.
+# Supabase diretto — COLL-PAT v0.13
 
-# Supabase — Collettori v0.1
+## Stato di questa consegna
 
-## Compatibilità
+Due migrazioni **preparate, applicate e collaudate solo su PostgreSQL/PostGIS locale isolato**. **Non applicate/verificate sul remoto**. La connessione configurata verso il Session pooler del progetto precedente ha restituito timeout su tutti gli indirizzi risolti (porta 5432). Nessuna sessione Supabase Auth o chiave pubblica di progetto era configurata nell'app. Non è stato simulato alcun successo remoto.
 
-La build Android 0.1 usa `/api/login`, `/api/sync` e gli altri endpoint FastAPI.
-Resta utilizzabile senza ricompilazione con questa architettura:
+Reset iniziale remoto/locale collegato: **non eseguito**, perché l'ambiente di sviluppo e i permessi effettivi non sono stati verificabili. La bozza v0.12 dell'emulatore è stata conservata e verificata byte per byte dopo upgrade. Backup privati ed evidenze stanno in `local-output/verification/v0.13/`, escluso da Git.
 
-**Android → HTTPS FastAPI → PostgreSQL/PostGIS Supabase**
+## Installazione del protocollo
 
-Supabase ospita il database. FastAPI e il suo disco persistente `runtime` devono
-essere ospitati separatamente. Supabase Auth, REST automatiche, Storage e Realtime
-non sostituiscono le API del pilota. Nell'app inserire l'URL HTTPS di FastAPI,
-non `https://<progetto>.supabase.co`. Nessuna chiave Supabase va nell'APK.
+1. Come proprietario database, esaminare ed eseguire in ordine `supabase/migrations/202609220001_coll_pat_v013.sql` e `202609220002_coll_pat_spatial.sql`. Non rilanciare la prima su uno schema già creato; non cancellare lo schema per forzarla. La migrazione storica 202609160001 non è stata modificata. Su un progetto nuovo le due v0.13 sono autonome da FastAPI, richiedono Auth Supabase e PostGIS.
+2. Creare/invitare l'utente con **Supabase Auth** secondo le policy normali. Non usare admin/admin come credenziale remota. Eseguire privatamente `supabase/bootstrap-v013.sql.example`, sostituendo l'UUID dell'utente verificato. Il progetto applicativo sintetico proposto è `00000000-0000-4000-8000-000000000013`.
+3. Gli account legacy `collettori.users` non sono Auth: collegare esplicitamente gli UUID in `coll_pat.legacy_identity_links` dopo verifica dell'identità. Nessuna copia di password/hash. Per l'anagrafica legacy utilizzare il dry run `scripts/migrate_legacy_catalog.py --area ... --project ... --auth-admin ...`, quindi `--execute` dopo la verifica del rapporto. Lo script usa `COLL_PAT_ADMIN_DSN` solo nell'ambiente privato.
+4. In Android → Altro → Account: URL HTTPS Supabase, chiave **publishable/anon**, UUID progetto, email/password Auth. La sessione viene cifrata con Keystore, con refresh token ruotato correttamente. Mai chiavi secret/service_role o DSN PostgreSQL nell'app.
+5. Admin dashboard locale (solo demo): admin/admin. Il server controlla comunque il ruolo admin. Pubblicare i dati sintetici locali oppure importare il ZIP; attendere ricevuta prima di considerarli remoti. Accedere prima di iniziare ispezioni destinate al server.
 
-Gli account individuali restano in `collettori.users`, con password Argon2 e
-sessioni proprie. Non sono account di `auth.users`. RLS permette l'accesso al
-solo ruolo backend; i limiti per utente e area sono applicati da FastAPI.
+## Accessi e protocollo
 
-## 1. Inizializzare un progetto nuovo
+`coll_pat` è privato, non va aggiunto agli schemi Data API esposti. RLS attiva su ogni tabella, niente DML/SELECT client diretti. Pubbliche soltanto RPC `coll_pat_status`, `coll_pat_catalog`, `coll_pat_apply`, `coll_pat_history`, `coll_pat_backup`, `coll_pat_reset`, eseguibili da authenticated e protette internamente con auth.uid()/membership. Funzioni SECURITY DEFINER con search_path vuoto, oggetti qualificati e permessi minimi.
 
-Nel SQL Editor Supabase, come `postgres`, eseguire tutto il file
-[`202609160001_pilot.sql`](../supabase/migrations/202609160001_pilot.sql).
+Catalogo paginato 200 righe con revisione coerente; se cambia durante lo scaricamento occorre ripetere il download. Operazioni atomiche, UUID idempotente e confronto integrale JSONB. Autore dell'ispezione deve corrispondere ad Auth. GPS ricalcolato sul server usando gps-1, inclusi accuracy, età, mock, permesso e candidati ambigui. Campi interni regolari nelle verifiche esterne sono rifiutati.
 
-La migrazione è atomica e crea schema privato `collettori`, tabelle, relazioni,
-indici, PostGIS e versione Alembic `0001`. Mantiene gli stessi tipi del pilota:
-UUID come varchar, date ISO come testo e payload JSON; nessuna conversione
-incompatibile con il codice esistente. PostGIS già presente viene rispettato.
-`anon`, `authenticated` e `service_role` non ricevono accesso alle tabelle.
-Non aggiungere `collettori` agli schemi esposti dalle Data API.
+Le vecchie API FastAPI non sono usate dall'APK v0.13. La nuova migrazione revoca al ruolo legacy le scritture nelle tabelle di ispezione; client precedenti non possono aggirare la generazione. Non esporre vecchie tabelle utenti/hash/sessioni. Conservare backend e database storico in sola lettura per audit/migrazione.
 
-Il ruolo `collettori_backend` nasce NOLOGIN. Impostare **privatamente**, nel SQL
-Editor, una password casuale forte e abilitarne il login:
+## Pulizia iniziale e reset ordinario
 
-```sql
-ALTER ROLE collettori_backend LOGIN PASSWORD '<PASSWORD_CASUALE_PRIVATA>';
-```
+`scripts/initial_inspection_cleanup.py` è una procedura privata distinta dalle migrazioni, dry run predefinito. Richiede progetto development, area legacy esplicitamente sintetica, amministratore Auth esistente, nessuna nuova ispezione nel progetto v0.13 e percorso backup privato. L'esecuzione richiede `--execute --confirmation AZZERA`; registra un marcatore una tantum, cancella solo ispezioni di quell'area e relative dipendenze, preserva anagrafica/account/configurazione e incrementa generation.
 
-Il segreto non deve essere salvato nei file SQL, nel repository o nella chat.
-La migrazione non è ripetibile deliberatamente: se schema o ruolo esistono,
-fallisce e annulla le modifiche. Non cancellare schemi per forzarla su un database
-già utilizzato. Le modifiche successive richiedono una nuova migrazione.
+Dashboard: conteggio/ambito, digitazione AZZERA, backup privato locale della risposta server e archivio locale, reset immediato autorizzato. Nessuna outbox distruttiva. Se il backup diventa obsoleto per un invio concorrente, il server rifiuta e richiede un nuovo backup. Vecchie code sono sospese come RESET_OBSOLETE; il recupero deve essere deciso esplicitamente, senza cambiare generation dei vecchi payload.
 
-## 2. Configurare il backend
+## Verifica
 
-Usare la connessione **Direct** o **Session pooler (5432)** indicata da Connect
-nel progetto. Il Transaction pooler (6543) non è supportato da questa configurazione:
-il backend imposta un `search_path` di sessione. Per una rete soltanto IPv4,
-usare Session pooler. Sostituire l'utente con il ruolo dedicato:
+`backend/tests/test_v013_sql.py` crea un database temporaneo esclusivamente su localhost, applica le migrazioni e usa il ruolo authenticated con claim di test. Verifica autorizzazioni e transazioni reali, **non** un login Auth Supabase remoto. Variabile: COLL_PAT_SQL_TEST_URL. Test di integrazione remota Auth→RPC, secondo telefono, policy nel progetto installato e reset iniziale rimangono da eseguire.
 
-```text
-# Direct
-DATABASE_URL=postgresql+psycopg://collettori_backend:<PASSWORD_URL_ENCODED>@db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require
-# Session pooler: copiare host/regione da Connect, non indovinarli
-DATABASE_URL=postgresql+psycopg://collettori_backend.<PROJECT_REF>:<PASSWORD_URL_ENCODED>@<SESSION_POOLER_HOST>:5432/postgres?sslmode=require
-DB_SCHEMA=collettori
-OFFLINE_HOURS=72
-```
-
-Codificare i caratteri speciali della password nella URL. `sslmode=require`
-critta il trasporto; per verificare anche l'identità del server usare
-`sslmode=verify-full` e `sslrootcert` con il certificato fornito dal progetto.
-Le credenziali sono solo lato server. Il backend rileva lo schema PostGIS
-(`extensions`, `gis`, `public`, ecc.) e lo aggiunge dopo `collettori`.
-
-Per Docker salvare DATABASE_URL e OFFLINE_HOURS nel `.env` locale, escluso da Git:
-
-```text
-docker compose -f compose.supabase.yaml up -d --build
-docker compose -f compose.supabase.yaml exec api python -m app.cli bootstrap --username nome.cognome --company "Impresa pilota sintetica" --area DEMO --area-name "Area sintetica" --synthetic
-docker compose -f compose.supabase.yaml exec api python -m app.cli import-gis demo/synthetic.zip demo/mapping.json
-```
-
-Questo Compose è autonomo; **non combinarlo con compose.yaml**. Non avvia un
-PostgreSQL locale e non esegue Alembic all'avvio: il ruolo runtime non ha DDL.
-Per l'avvio Python impostare le stesse variabili d'ambiente nella shell,
-poi, da `backend`, eseguire `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`.
-Python non carica automaticamente il file `.env`.
-
-Proteggere il servizio con HTTPS prima dell'uso remoto. Conservare `runtime`
-su disco persistente e includerlo nei backup insieme al database: contiene
-gli archivi originali GIS. Gli script backup/restore del Compose locale non
-gestiscono automaticamente Supabase.
-
-## 3. Verificare prima del pilota
-
-### Avvio guidato sul PC del pilota
-
-Per il progetto `zzipvrnhndigepufhkcj`, host Session pooler verificato nel pannello,
-è disponibile `scripts/supabase_local.py`. Dalla radice del repository:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\supabase_local.py configure
-.\.venv\Scripts\python.exe scripts\supabase_local.py check
-.\.venv\Scripts\python.exe scripts\supabase_local.py admin bootstrap --username nome.cognome --company "Impresa pilota sintetica" --area DEMO --area-name "Area sintetica" --synthetic
-.\.venv\Scripts\python.exe scripts\supabase_local.py admin import-gis ..\demo\synthetic.zip ..\demo\mapping.json
-.\.venv\Scripts\python.exe scripts\supabase_local.py serve
-```
-
-`configure` chiede la password del ruolo database due volte, in modo nascosto,
-e crea `.env` senza sovrascrivere un file esistente. Non cambia la password
-su Supabase: impostarla prima nel SQL Editor. `bootstrap` chiede separatamente
-la password dell'account amministratore dell'app. Non riutilizzare la password
-database. `check` legge soltanto schema e contatori; non modifica dati.
-
-Questo avvio funziona mentre il PC e il processo restano accesi. Per un telefono
-USB usare `adb reverse tcp:8000 tcp:8000` e l'URL `http://127.0.0.1:8000` nella
-build debug. Per l'uso fuori dal PC serve un server con HTTPS e disco persistente.
-
-Eseguire [`verify.sql`](../supabase/verify.sql) nel SQL Editor dopo la migrazione.
-Gli inserimenti di verifica vengono annullati con ROLLBACK. Poi verificare login,
-importazione GIS, download area, invio di un controllo, revisione e rapporti
-tramite FastAPI. Completare le prove Android in modalità aereo e riconnessione.
-
-La migrazione prepara **lo schema vuoto**: non trasferisce dati da SQLite o dal
-precedente PostgreSQL, account, sessioni, archivi GIS o controlli pendenti. Per
-un sistema già in uso serve un trasferimento separato con UUID preservati,
-backup e riconciliazione. Cambiare URL del server nell'app crea un diverso
-ambito locale: sincronizzare o esportare i controlli pendenti prima del cambio.
-
-## Evidenza disponibile
-
-Test automatici di coerenza SQL/modello e configurazione della connessione
-inclusi in pytest. Dopo l'applicazione della migrazione da parte dell'utente,
-il collegamento reale al progetto del pilota è stato verificato: ruolo backend,
-schema collettori, versione 0001 e funzioni PostGIS. FastAPI locale risponde
-con HTTP 200; un login inesistente viene rifiutato con 401. Creato il primo
-amministratore mediante inserimento privato della password da parte dell'utente.
-Importazione demo riuscita: 16 punti, 15 tratti, nessun errore o avviso.
-Il test SQL completo dei permessi e il collaudo Android end-to-end restano da eseguire.
-
-Su Windows sono disponibili anche `scripts/configure-supabase.ps1` e
-`scripts/create-admin.ps1`: finestre locali con campi password mascherati.
-La prima salva il `.env` escluso da Git; la seconda passa la password al processo
-Python attraverso stdin e riutilizza il bootstrap transazionale del backend.
-Nessuna password viene inserita negli argomenti dei processi o nel repository.
-
-Fonti ufficiali: [connessioni](https://supabase.com/docs/guides/database/connecting-to-postgres),
-[PostGIS](https://supabase.com/docs/guides/database/extensions/postgis),
-[RLS](https://supabase.com/docs/guides/database/postgres/row-level-security).
+Fonti: [funzioni Supabase](https://supabase.com/docs/guides/database/functions), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [chiavi API](https://supabase.com/docs/guides/getting-started/api-keys). Configurazione precedente archiviata in [history/v0.12/SUPABASE.md](history/v0.12/SUPABASE.md).

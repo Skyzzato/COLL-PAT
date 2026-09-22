@@ -1,27 +1,9 @@
-# Roadmap v0.11
+# Roadmap COLL-PAT
 
-Priorità: collaudo dispositivo, storage foto con upload differito e ricevute, NFC/HF on-metal e associazione amministrativa, QR fallback, esportazione portabile immagini, cartografia offline autorizzata. Nessun editing GIS avanzato nella demo.
+La v0.13 comprende sincronizzazione strutturata Supabase diretta, catalogo e importazione GIS Android, audit e reset. Prima dell'uso operativo: applicazione/verifica sul progetto reale, collaudo multi-dispositivo e sul campo, firma operativa separata dalla chiave debug storica e disabilitazione definitiva dello sblocco admin/admin.
 
-## Roadmap storica del pilota
-
-# Roadmap
-
-## FASE ATTUALE — v0.1
-
-Pilota GPS: selezione mappa/elenco, mappa e dati offline, scheda senza foto, archivio persistente, server, storico, revisioni, scadenze assegnate, anomalie essenziali, esportazione e rapporto trimestrale versionato.
-
-Il completamento del collaudo su dispositivi e sull'infrastruttura scelta è una condizione per l'uso operativo, non una funzionalità dichiarata già verificata.
-
-## FASE SUCCESSIVA
-
-Collaudo sul territorio, taratura delle soglie sperimentali, verifica della qualità cartografica, ergonomia con guanti e condizioni reali, eventuali fotografie facoltative e perfezionamento dei rapporti. Estensione dei pacchetti territoriali sulla base delle dimensioni e delle prestazioni misurate.
-
-## FASE IDENTIFICAZIONE OTTICA/MANUALE
-
-Lettura QR e inserimento del codice della targhetta, anche offline, associati agli eventi GPS e con modalità tracciata. Il numero amministrativo cercato nella v0.1 è distinto dal futuro codice interno di verifica. Associazioni delle targhette con UUID, tipo, validità e storico di sostituzione; nessuna dipendenza esclusiva dalla botola mobile.
-
-## ULTIMA FASE PREVISTA — NFC
-
-Lettura NFC semplice, risoluzione locale del tag e associazione al medesimo sistema GPS. Prima: prove di dispositivi, tag, posizionamento sicuro, interferenze, materiali e manutenzione. NFC non è un requisito dei telefoni della v0.1.
-
-Nessun numero di versione assegnato alle fasi future. Nessun sensore o sistema crittografico avanzato considerato già approvato.
+- Caricamento reale delle foto con storage autorizzato e controllo delle ricevute; attualmente solo foto locali e metadati.
+- Formati/CRS GIS aggiuntivi e gestione esplicita di multipart e associazioni sorgente cambiate.
+- NFC/HF, lettori RFID esterni e QR: conservare i contratti di identificazione, senza scansioni simulate.
+- Cartografia offline autorizzata: estratti di dati OSM, conversione GeoJSON/vettoriale adeguata, stili COLL-PAT e pacchetti da fonti autorizzate. Preservare origine, licenza ODbL e attribuzione: uno stile personalizzato non rende proprietari i dati OSM. Non scaricare preventivamente aree/zoom dai tile server standard; non pubblicare dati infrastrutturali PAT in OSM.
+- Pianificazione delle visite dell'intero collettore, solo dopo definizione del modello di giro/ramo: mai sommare automaticamente le ispezioni dei singoli punti come visite di rete.

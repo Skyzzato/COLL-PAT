@@ -34,7 +34,9 @@ val CollettoriColors = lightColorScheme(
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp),
         horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
         Image(painterResource(R.drawable.ic_pipe),null,Modifier.size(144.dp))
-        Text("Collettori",style=MaterialTheme.typography.headlineLarge)
+        Text(AppSpec.NAME,style=MaterialTheme.typography.headlineLarge)
+        Text("v${AppSpec.version} · build ${BuildConfig.VERSION_CODE}")
+        if(error.isBlank())CircularProgressIndicator(Modifier.padding(top=24.dp))
         if(error.isNotBlank()) {
             Spacer(Modifier.height(24.dp))
             Text(error,color=MaterialTheme.colorScheme.error)

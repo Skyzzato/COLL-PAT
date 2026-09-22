@@ -1,17 +1,25 @@
-# Modello dati — v0.11
+# Modello dati COLL-PAT v0.13
 
-| Entità logica | Implementazione attuale | Relazioni |
-|---|---|---|
-| Collector | collectors nel dataset JSON; segmenti GeoJSON | uno → molti pozzetti/segmenti |
-| Manhole | points: UUID, code, latitude, longitude, chainage_m, state, last_inspection, collector_id | ID stabile indipendente dal tag |
-| Inspection | Room Visit, body JSON, owner, datasetId, revision, stato, ricevuta | pozzetto → molte visite; dataset storico conservato |
-| InspectionPhoto | data class e settings photos:inspectionId, file privato | photoId, inspectionId, manholeId, localUri, remoteUrl nullable, uploadStatus LOCAL_ONLY, createdAt |
-| IdentificationEvent | settings identification:inspectionId | metodo GPS, conferma, manholeId, evento GPS con precisione/timestamp e risultato |
-| TagAssociation | data class; array tag_associations nel punto demo, inizialmente vuoto | uid, type, associatedAt, status, replacedBy; non sostituisce manholeId |
-| Operator | SessionStore + owner, user_id nella visita | operatore demo fisso; identità individuale nel pilota |
+## Anagrafica
 
-Lo stato/ultima ispezione del dataset sono iniziali. L'interfaccia deriva l'ultima registrazione dalle visite locali, senza riscrivere il pacchetto immutabile. I tag possono essere dismessi e sostituiti preservando UID precedenti e ID logico. La loro associazione sarà amministrativa, separata dalla scheda di controllo.
+`catalog` locale e `coll_pat.catalog` remoto: UUID stabile, ambito owner/progetto, kind (`collector`, `point`, `segment`), body strutturato, stato locale. I campi sono persistiti in JSON/JSONB e validati in Kotlin e SQL; PostGIS conserva inoltre una geometria SRID 4326 indicizzata.
 
-Le coordinate dell'operatore e accuracy_m stanno nell'evento originale della visita; coordinate del manufatto nel pacchetto. Le foto sono entità distinte, non base64 nel JSON delle ispezioni. Metadati owner-scoped nei settings Room esistenti; creazione/rimozione protetta da transazione e controllo bozza. Snapshot metadati foto per revisione. La UI mostra allegati della revisione corrente; consultazione dei media delle vecchie revisioni rinviata.
+Collettore: `code` obbligatorio e unico nel progetto (SQL senza distinzione maiuscole), `description` distinta, `type` ∈ CV/CZI/CR/BOE'/opere accessorie, `visits_h1=2`, `visits_h2=2`, `hours_km_visit=2`, `length_m` nullable, `length_source` UNAVAILABLE/MEASURED/ESTIMATED/DECLARED, `length_complete`, `archived`. Visite intere non negative; ore decimali non negative, interfaccia con virgola. Non sono conteggi di visite completate dell'intero collettore.
 
-**MIGRAZIONE SQL NECESSARIA: NO.** Nessuna modifica a Room v1 o schema SQL backend/Supabase. Il contenitore settings già esiste e i nuovi campi del pacchetto sono JSON. Nessun seed della rete fittizia nel database server: solo asset demo. Non eseguire SQL nuovo per questa versione. Su un server nuovo applicare soltanto le migrazioni iniziali previste dal deployment scelto.
+Punti: codice testuale (zeri conservati), descrizione, lat/lon, tipo manufatto, appartenenze multiple `collectors`, incertezza cartografica nullable. Segmenti: geometria, estremi UUID, appartenenze multiple, flag schematico. Lunghezze in metri: Haversine locale, PostGIS geography sferica remota; unione spaziale dei tratti per non duplicare geometrie sovrapposte. Un dato dichiarato non è sovrascritto dall'importazione.
+
+Provenienza: `source_identity = sorgente|layer|tipo|chiave`, `source_key`, hash, mapping, rapporto e originale privato locale. Reimportazioni ritrovano l'UUID per chiave persistente, mai per codice, coordinate o posizione di riga. Nessuna rimozione implicita degli oggetti assenti da un file parziale.
+
+## Schede e protocollo
+
+Scheda: UUID nuovo, autore, manufatto, progetto, generazione, versione payload 2, versione app da BuildConfig, timestamp UTC, modello, sheet, eventi GPS, metadati foto, esito e qualificazione periodica esplicita. Modelli ORDINARY, ASPHALT_EXTERNAL, ASSET_EXTERNAL. Nuovi esiti COMPLETO/IMPEDITO; PARZIALE precedente solo leggibile. Le bozze non hanno operazioni remote.
+
+Ogni outbox contiene operation UUID, scope, tipo, riferimento, payload immutabile e generazione. Nessun UNIQUE manufatto/data. Stato ricevuto soltanto dopo RPC verificata. Tipi: inspection, cancel, catalog_chunk, catalog. La versione di reset non viene ricostruita da data o sessione attuale.
+
+Annullamento: audit UUID, autore, timestamp, motivo, target evento/scheda e originale preservato. Nelle bozze l'evento annullato resta nel JSON; dopo registrazione è una rettifica separata. La valutazione corrente usa l'ultimo evento **attivo** per timestamp/UUID, non il più favorevole. Il riepilogo originale non viene riscritto.
+
+Date: timestamp ISO UTC; giornata e semestre Europe/Rome dalla data di esecuzione, non ricezione. Reset: generation persistente, log autore/ambito/data/conteggio; nessun CASCADE generalizzato.
+
+## Migrazioni
+
+Room 1→2: aggiunte `catalog`, `audit`, `imports`, colonne outbox project/generation/payloadVersion/kind. Vecchie operazioni `LEGACY_SUSPENDED`; schede inalterate, backup privato v0.12 una tantum. SQL `202609220001_coll_pat_v013.sql` e `202609220002_coll_pat_spatial.sql`; precedente migrazione 202609160001 immutata. [Setup e stato reale](SUPABASE.md).

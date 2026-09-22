@@ -20,8 +20,8 @@ class MapSafetyTest {
             val style = JSONObject(localStyle(pack, points, points.first().getString("id"), position))
             val sources = style.getJSONObject("sources")
             assertFalse(sources.has("osm"))
-            assertEquals(10, sources.getJSONObject("points").getJSONObject("data").getJSONArray("features").length())
-            assertEquals(9, sources.getJSONObject("network").getJSONObject("data").getJSONArray("features").length())
+            assertEquals(16, sources.getJSONObject("points").getJSONObject("data").getJSONArray("features").length())
+            assertEquals(14, sources.getJSONObject("network").getJSONObject("data").getJSONArray("features").length())
             assertEquals(0, sources.getJSONObject("accuracy").getJSONObject("data").getJSONArray("features").length())
             assertEquals("Precisione non ancora disponibile", precisionText(position))
         }

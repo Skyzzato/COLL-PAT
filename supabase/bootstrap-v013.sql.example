@@ -1,0 +1,9 @@
+-- PRIVATE, manual bootstrap by a project owner after creating an Auth user normally.
+-- Replace only AUTH_USER_UUID with that user's verified auth.users.id. Never use admin/admin remotely.
+BEGIN;
+INSERT INTO coll_pat.projects(id,name,development) VALUES ('00000000-0000-4000-8000-000000000013','COLL-PAT synthetic development',true);
+INSERT INTO coll_pat.memberships(project_id,user_id,role)
+VALUES ('00000000-0000-4000-8000-000000000013','AUTH_USER_UUID','admin');
+-- Optional attribution link, independently verified; never copy hashes or plaintext passwords:
+-- INSERT INTO coll_pat.legacy_identity_links(legacy_user_id,auth_user_id,linked_by) VALUES ('LEGACY_UUID','AUTH_USER_UUID','AUTH_USER_UUID');
+COMMIT;
