@@ -31,28 +31,34 @@ import java.time.format.DateTimeFormatter
 
 @Composable fun CollPatApp(repo:Repository){
     val app=repo.context.applicationContext as PilotApplication
-    var ready by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var attempt by remember{mutableIntStateOf(0)}
+    var obsolete by remember{mutableStateOf(false)};var ready by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var attempt by remember{mutableIntStateOf(0)}
     LaunchedEffect(attempt){try{
         coroutineScope{
-            val load=async(Dispatchers.IO){withTimeout(15000){repo.prepareWorkspace()}}
+            val load=async(Dispatchers.IO){withTimeout(15000){repo.prepareWorkspace();try{repo.checkVersion(refreshBlocked=attempt>0);obsolete=false}catch(e:ApiError){if(e.code==426){obsolete=true;error=e.message.orEmpty()}else throw e}}}
             if(!app.splashFinished)delay(AppSpec.SPLASH_MILLIS)
             load.await()
         };app.splashFinished=true;ready=true
-    }catch(e:Exception){error=e.message?:"Archivio non disponibile"}}
+    }catch(e:Exception){error=friendlyError(e)}}
     if(!ready){AppLoading(error){error="";attempt++};return}
     var accountVersion by remember{mutableIntStateOf(0)}
-    if(repo.store.get()==null){AccountPanel(repo){accountVersion++;ready=false;attempt++};return}
+    if(obsolete){Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp)){Text("Versione non più supportata",style=MaterialTheme.typography.headlineSmall);Text(error.ifBlank{"Installa l’aggiornamento di COLL-PAT per continuare."});Text("I dati sul telefono sono conservati.");Button(onClick={ready=false;attempt++}){Text("Verifica aggiornamento")}};return}
+    if(repo.store.get()==null){AuthScreen(repo){accountVersion++;ready=false;attempt++};return}
     key(accountVersion,repo.owner()){Workspace(repo){accountVersion++;ready=false;attempt++}}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun Workspace(repo:Repository,onAccount:()->Unit){
     val account=repo.owner();val scope=rememberCoroutineScope();var busy by remember{mutableStateOf(false)};var message by remember{mutableStateOf("")}
-    fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){message=e.message?:"Operazione non riuscita"}finally{busy=false}}}
+    fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:CancellationException){throw e}catch(e:Exception){message=friendlyError(e)}finally{busy=false}}}
     val packs by repo.dao.packages(account).collectAsState(emptyList());val visits by repo.dao.visits(account).collectAsState(emptyList());val catalog by repo.dao.catalog(account).collectAsState(emptyList())
     val pack=packs.firstOrNull{it.id==AppSpec.PACKAGE}
     val data=remember(pack?.body){pack?.let{JSONObject(it.body)}?:JSONObject().put("points",JSONArray()).put("segments",JSONArray()).put("collectors",JSONArray()).put("basemap",JSONObject.NULL).put("osm",true)}
     val points=remember(data){data.getJSONArray("points").objects()};val collectors=remember(catalog){catalog.filter{it.kind=="collector"}.map{JSONObject(it.body)}.sortedBy{it.optString("description")}}
+    var settings by remember{mutableStateOf(FieldSettings())};var settingsLoaded by remember{mutableStateOf(false)}
+    LaunchedEffect(account){settings=repo.fieldSettings();settingsLoaded=true}
+    LaunchedEffect(settings){if(settingsLoaded){delay(250);repo.saveSettings(settings)}}
+    var statusNow by remember{mutableStateOf(Instant.now())};LaunchedEffect(Unit){while(true){delay(60000);statusNow=Instant.now()}}
+    val statuses=remember(points,collectors,visits,statusNow){statusIndex(points,collectors,visits,statusNow)}
     var hidden by remember{mutableStateOf(emptySet<String>())};var catalogState by remember{mutableStateOf("Catalogo locale · completezza remota non verificata")}
     val queue by repo.dao.outbox(account).collectAsState(emptyList())
     val pendingCount=queue.size
@@ -60,6 +66,7 @@ import java.time.format.DateTimeFormatter
     val lifecycle=LocalLifecycleOwner.current
     DisposableEffect(lifecycle){val observer=LifecycleEventObserver{_,e->if(e==Lifecycle.Event.ON_RESUME)repo.syncNow()};lifecycle.lifecycle.addObserver(observer);onDispose{lifecycle.lifecycle.removeObserver(observer)}}
     var tab by rememberSaveable{mutableStateOf("Mappa")};var collectorFilter by rememberSaveable{mutableStateOf("")};var pointFilter by rememberSaveable{mutableStateOf("")}
+    LaunchedEffect(tab){if(tab=="Ispezioni"&&repo.authenticated())try{repo.downloadHistory()}catch(e:Exception){message=friendlyError(e)}}
     var query by rememberSaveable{mutableStateOf("")};var pointStatus by rememberSaveable{mutableStateOf("Tutti")}
     var selected by rememberSaveable{mutableStateOf<String?>(null)};var highlighted by rememberSaveable{mutableStateOf<String?>(null)};var editorId by rememberSaveable{mutableStateOf<String?>(null)}
     var selector by rememberSaveable{mutableStateOf(false)};var detail by remember{mutableStateOf<JSONObject?>(null)}
@@ -75,9 +82,10 @@ import java.time.format.DateTimeFormatter
     suspend fun capture(id:String?){
         val visit=id?.let{repo.dao.visit(it,account)}
         val payload=visit?.let{JSONObject(it.body)}?:JSONObject().put("id","orientation").put("manhole_id","").put("user_id",repo.store.get()!!.getString("user_id")).put("device_id",repo.store.deviceId).put("dataset_id",pack?.id?:AppSpec.PACKAGE)
-        val rule=Rule.parse(repo.localCatalog()!!.getJSONObject("rule"))
+        val rule=Rule.parse(repo.localCatalog()!!.getJSONObject("rule")).copy(radius=settings.maxDistance,accuracy=settings.maxAccuracy)
+        payload.put("user_id",repo.store.get()!!.getString("user_id"))
         val request=LocationCapture(repo.context);activeCapture=request
-        val event=try{request.collect(payload,rule)}finally{activeCapture=null};position=event
+        val event=try{request.collect(payload,rule)}finally{activeCapture=null};event.put("applied_limits",rule.json());position=event
         if(visit!=null){val original=repo.snapshot(visit).getJSONArray("points").objects();val p=original.first{it.getString("id")==visit.manholeId};event.put("local_evaluation",GpsRule.evaluate(event,p,original,rule));repo.appendEvent(id,event)}
         else if(validCoordinates(event.numberOrNull("latitude"),event.numberOrNull("longitude"))){tick++;bounds=emptyList();center=LatLng(event.getDouble("latitude"),event.getDouble("longitude")) to tick}
         else message=event.optString("error","Posizione non disponibile")
@@ -90,9 +98,9 @@ import java.time.format.DateTimeFormatter
     var exportText by remember{mutableStateOf("")}
     val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->if(uri!=null)task{withContext(Dispatchers.IO){repo.context.contentResolver.openOutputStream(uri)?.use{it.write(exportText.toByteArray())}?:error("File non scrivibile")};message="Esportazione salvata; le foto originali restano sul telefono"}}
     val online=NetworkStatus();var clock by remember{mutableIntStateOf(0)};LaunchedEffect(Unit){while(true){delay(10000);clock++}}
-    val identification=remember(position,clock,points){GpsIdentification.identify(points,position)}
+    val identification=remember(position,clock,points,settings){GpsIdentification.identify(points.filter{it.memberships().any{cid->cid in activeCollectors}},position,settings)}
     Box(Modifier.fillMaxSize()){
-    Scaffold(bottomBar={NavigationBar{listOf("Mappa","Collettori","Pozzetti","Ispezioni","Altro").forEach{title->NavigationBarItem(selected=tab==title,onClick={tab=title},icon={Icon(painterResource(when(title){"Mappa"->R.drawable.ic_map;"Collettori"->R.drawable.ic_pipe;"Pozzetti"->R.drawable.ic_pin;"Ispezioni"->R.drawable.ic_history;else->R.drawable.ic_info}),contentDescription=title,modifier=Modifier.size(24.dp))},label={Text(title,maxLines=1)})}}}){padding->
+    Scaffold(bottomBar={NavigationBar{listOf("Mappa","Collettori","Pozzetti","Ispezioni","Impostazioni").forEach{title->NavigationBarItem(selected=tab==title,onClick={tab=title},icon={Icon(painterResource(when(title){"Mappa"->R.drawable.ic_map;"Collettori"->R.drawable.ic_pipe;"Pozzetti"->R.drawable.ic_pin;"Ispezioni"->R.drawable.ic_history;else->R.drawable.ic_settings}),contentDescription=title,modifier=Modifier.size(24.dp))},label={Text(title,maxLines=1)})}}}){padding->
         Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding()){
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=6.dp),horizontalArrangement=Arrangement.SpaceBetween){Text(AppSpec.NAME,style=MaterialTheme.typography.titleLarge);Text("v${AppSpec.version}",style=MaterialTheme.typography.labelMedium)}
             if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -101,9 +109,9 @@ import java.time.format.DateTimeFormatter
             Box(Modifier.weight(1f).fillMaxWidth()){
                 // Keep the map mounted while switching pages: camera and sources remain alive.
                 val mapData=remember(data,hidden,activeCollectors){JSONObject(data.toString()).put("segments",JSONArray(data.getJSONArray("segments").objects().filter{s->s.memberships().any{it in activeCollectors&&it !in hidden}})).put("osm",true)}
-                val shownPoints=remember(points,hidden,activeCollectors){points.filter{p->p.memberships().any{it in activeCollectors&&it !in hidden}}}
+                val shownPoints=remember(points,hidden,activeCollectors,statuses){points.filter{p->p.memberships().any{it in activeCollectors&&it !in hidden}}.map{p->JSONObject(p.toString()).put("status_color",statuses[p.getString("id")]?.calculatedStatus?.color?:InspectionState.DUE.color)}}
                 val displayPosition=remember(position,identification){position?.let{JSONObject(it.toString()).put("candidate_ids",JSONArray(identification.candidates))}}
-                OfflineMap(mapData,shownPoints,highlighted,displayPosition,center,Modifier.fillMaxSize(),{selected=it;highlighted=it},{message=it},bounds,tick)
+                OfflineMap(mapData,shownPoints,highlighted,displayPosition,center,Modifier.fillMaxSize(),{selected=it;highlighted=it},{message=it},bounds,tick,settings)
                 if(tab=="Mappa"){
                     Column(Modifier.align(Alignment.TopStart).padding(8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha=.95f)).padding(8.dp)){
                         Text(identification.state,style=MaterialTheme.typography.labelMedium);Text(precisionText(position),style=MaterialTheme.typography.bodySmall)
@@ -120,35 +128,19 @@ import java.time.format.DateTimeFormatter
                             Column(Modifier.padding(horizontal=12.dp)){
                                 Field("Cerca codice, descrizione o collettore",query){query=it}
                                 if(collectorFilter.isNotBlank())Row{Text("Filtro: "+collectors.find{it.getString("id")==collectorFilter}?.optString("description"),Modifier.weight(1f));TextButton(onClick={collectorFilter=""}){Text("Rimuovi")}}
-                                Choice("Mostra",pointStatus,listOf("Tutti","Da ispezionare","Con anomalie").map{it to it}){pointStatus=it}
+                                Choice("Collettore",collectorFilter,listOf("" to "Tutti i collettori")+collectors.filter{!it.optBoolean("archived")}.map{it.getString("id") to it.getString("description")}){collectorFilter=it}
+                                Choice("Mostra",pointStatus,listOf("Tutti","Da ispezionare","Già ispezionati","Con anomalie").map{it to it}){pointStatus=it}
                             }
-                            val filtered=points.filter{p->(collectorFilter.isBlank()||collectorFilter in p.memberships())&&((p.optString("code")+p.optString("description")+collectorNames(p,collectors)).contains(query,true))&&when(pointStatus){"Da ispezionare"->visits.none{it.manholeId==p.getString("id")&&periodic(it)};"Con anomalie"->visits.any{it.manholeId==p.getString("id")&&!isCancelled(it)&&hasAnomaly(JSONObject(it.body))};else->true}}
+                            val filtered=points.filter{p->p.memberships().any{it in activeCollectors}&&(collectorFilter.isBlank()||collectorFilter in p.memberships())&&((p.optString("code")+p.optString("description")+collectorNames(p,collectors)).contains(query,true))&&when(pointStatus){"Da ispezionare"->statuses[p.getString("id")]?.inspectionUpToDate!=true;"Già ispezionati"->statuses[p.getString("id")]?.inspectionUpToDate==true;"Con anomalie"->statuses[p.getString("id")]?.latestInspectionHasAnomaly==true;else->true}}
+                            if(filtered.isEmpty())Text("Nessun pozzetto nei filtri correnti",Modifier.padding(12.dp))
                             LazyColumn(state=pointListState,modifier=Modifier.weight(1f).padding(horizontal=12.dp)){items(filtered,key={it.getString("id")}){p->Card(modifier=Modifier.fillMaxWidth().padding(bottom=8.dp),onClick={selected=p.getString("id")}){Row(Modifier.padding(12.dp)){
-                                Column(Modifier.weight(1f)){Text(p.getString("code"),style=MaterialTheme.typography.titleMedium);Text(collectorNames(p,collectors));Text(assetLabel(p.optString("asset_type","UNKNOWN")),style=MaterialTheme.typography.labelSmall);Text(topologyLabel(p,points),style=MaterialTheme.typography.bodySmall)}
+                                Column(Modifier.weight(1f)){Text(p.getString("code"),style=MaterialTheme.typography.titleMedium);Text(collectorNames(p,collectors));Text(assetLabel(p.optString("asset_type","UNKNOWN")),style=MaterialTheme.typography.labelSmall);Text(topologyLabel(p,points),style=MaterialTheme.typography.bodySmall);statuses[p.getString("id")]?.let{s->Text(s.calculatedStatus.label,style=MaterialTheme.typography.labelMedium);Text("Ultima: "+(s.latestInspection?.let{shown(inspectionInstant(it).toString())}?:"mai")+" · "+(if(s.targetDays.isFinite())"ogni %.0f giorni".format(s.targetDays) else "periodicità non prevista"),style=MaterialTheme.typography.bodySmall)}}
                                 IconButton(onClick={focusPoint(p)}){Icon(painterResource(R.drawable.ic_target),"Centra "+p.getString("code"))}
                             }}}}
                         }
-                        "Ispezioni"->HistoryList(visits,points,collectors,pointFilter,collectorFilter,historyListState,{pointFilter="";collectorFilter=""},{editorId=it;message=""}){v,reason->task{repo.cancel(v.id,null,reason)}}
-                        else->Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)){
-                            Text("${AppSpec.NAME} v${AppSpec.version} · build ${BuildConfig.VERSION_CODE}",style=MaterialTheme.typography.titleLarge)
-                            Text("$pendingCount operazioni pendenti · "+if(repo.authenticated())"Supabase Auth collegato" else "Accesso server non configurato")
-                            Button(onClick={task{repo.dao.retryBlocked(account);repo.syncNow();message="Invio richiesto; attendere la ricevuta server"}}){Text("Riprova invio")}
-                            queue.filter{it.error!=null||it.state !in listOf("IN_ATTESA","IN_CORSO")}.take(10).forEach{Text("${it.kind}: ${it.state} · ${it.error?:"Accedere allo stesso account per inviare"}",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
-                            AccountPanel(repo,onAccount)
-                            OutlinedButton(enabled=!busy,onClick={task{repo.catalog();message="Catalogo completo aggiornato"}}){Text("Aggiorna tutti i collettori dal server")}
-                            OutlinedButton(enabled=!busy,onClick={task{repo.downloadHistory();message="Storico server aggiornato; lavoro locale preservato"}}){Text("Aggiorna ispezioni dal server")}
-                            if(BuildConfig.DEV_ADMIN)AdminPanel(repo,catalog,visits.size,{message=it})
-                            HorizontalDivider(Modifier.padding(vertical=12.dp))
-                            Text("Informazioni",style=MaterialTheme.typography.titleLarge)
-                            Text("Trento e Lavis inclusi sono sintetici, non infrastrutture PAT. Le importazioni mantengono la propria provenienza e il tipo di manufatto.")
-                            Text("Room conserva anagrafica, bozze e coda nello spazio privato. Salva bozza non invia. Registra Ispezione e Registra impedimento accodano dati reali: ricevuti soltanto dopo conferma Supabase. Accedere prima di creare lavoro da trasmettere; il lavoro di altri account rimane separato.")
-                            Text("La verifica esterna sotto asfalto è un controllo periodico senza apertura; l'impedimento non è conteggiato. Le visite semestrali del collettore sono obiettivi, non la somma delle singole schede.")
-                            Text("GPS su richiesta, con precisione, età e incertezza. Nessun tracciamento continuo. NFC/RFID e QR: predisposizione futura, nessuna lettura simulata.")
-                            Text("Foto reali locali, caricamento simulato e metadati separati. Cache cartografica nominale 200 MiB (${AppSpec.MAP_CACHE_BYTES} byte); le risorse visitate possono essere incomplete o eliminate dal sistema. Nessun pacchetto offline garantito, nessun download preventivo OSM.")
-                            Text("Dopo arresto forzato gli invii riprendono alla riapertura. Non avvengono a telefono spento. La dashboard admin/admin è uno sblocco locale di sviluppo, distinto dai permessi server.")
-                            OutlinedButton(onClick={task{exportText=repo.recoveryBundle();export.launch("COLL-PAT-v${AppSpec.version}-ispezioni.json")}}){Text("Esporta archivio ispezioni")}
-                            Text("© OpenStreetMap contributors · ODbL. Dati infrastrutturali separati dalla base OSM.",style=MaterialTheme.typography.bodySmall)
-                        }
+                        "Ispezioni"->HistoryList(visits,points,collectors,pointFilter,collectorFilter,historyListState,{pointFilter="";collectorFilter=""},{editorId=it;message=""},{p->focusPoint(p)},{p->task{val v=repo.begin(p,pack!!,"LIST");editorId=v.id}}){v,reason->task{repo.cancel(v.id,null,reason)}}
+                        else->SettingsPanel(repo,settings,{settings=it},catalog,visits,queue,onAccount,{message=it}){task{exportText=repo.recoveryBundle();export.launch("COLL-PAT-v${AppSpec.version}-ispezioni.json")}}
+
                     }}
                 }
             }
@@ -199,7 +191,7 @@ fun collectorExtent(data:JSONObject,id:String):List<LatLng>{
         Field("Cerca codice / descrizione",query){query=it};Text(state,style=MaterialTheme.typography.labelSmall)
         TextButton(onClick=refresh){Text("Aggiorna catalogo completo")}
         Row(verticalAlignment=Alignment.CenterVertically){
-            Checkbox(multi,{multi=it});Text("Selezione multipla",Modifier.weight(1f))
+            IconToggleButton(checked=multi,onCheckedChange={multi=it}){Icon(painterResource(R.drawable.ic_flag),"Attiva selezione multipla")};Spacer(Modifier.weight(1f))
             Box{
                 TextButton(enabled=selection.isNotEmpty(),onClick={actions=true}){Text("Azioni (${selection.size})")}
                 DropdownMenu(actions,{actions=false}){
@@ -210,13 +202,14 @@ fun collectorExtent(data:JSONObject,id:String):List<LatLng>{
             }
         }
         if(multi)TextButton(onClick={selection=if(filtered.all{it.getString("id") in selection})selection-filtered.map{it.getString("id")}.toSet() else selection+filtered.map{it.getString("id")}}){Text("Seleziona / deseleziona tutti i ${filtered.size} risultati filtrati")}
+        if(filtered.isEmpty())Text("Nessun collettore disponibile")
         LazyColumn(state=listState,modifier=Modifier.weight(1f)){items(filtered,key={it.getString("id")}){c->val id=c.getString("id");val extent=collectorExtent(data,id)
-            Card(Modifier.fillMaxWidth().padding(vertical=4.dp)){Column(Modifier.padding(10.dp)){
+            Card(onClick={if(multi)selection=if(id in selection)selection-id else selection+id else onPoints(c)},modifier=Modifier.fillMaxWidth().padding(vertical=4.dp)){Column(Modifier.padding(10.dp)){
                 Row(verticalAlignment=Alignment.CenterVertically){if(multi)Checkbox(id in selection,{selection=if(it)selection+id else selection-id});Column(Modifier.weight(1f)){Text(c.getString("description"),style=MaterialTheme.typography.titleMedium);Text(c.getString("code")+" · "+c.getString("type"))};IconButton(onClick={onVisible(id,id in hidden)}){Icon(painterResource(if(id in hidden)R.drawable.ic_eye_off else R.drawable.ic_eye),if(id in hidden)"Mostra collettore" else "Nascondi collettore")};IconButton(enabled=extent.isNotEmpty(),onClick={onFocus(c)}){Icon(painterResource(R.drawable.ic_target),"Inquadra collettore")}}
                 Text(lengthLabel(c),style=MaterialTheme.typography.bodySmall);if(extent.isEmpty())Text("Centraggio non disponibile: nessuna geometria associata",style=MaterialTheme.typography.bodySmall)
                 Text(if(id in hidden)"Nascosto sulla mappa" else "Visibile sulla mappa",style=MaterialTheme.typography.labelSmall)
                 if(statuses[id]!="RICEVUTO_SERVER")Text(if(statuses[id]=="SEED_LOCAL")"Dati sintetici locali" else "Anagrafica in attesa di sincronizzazione",style=MaterialTheme.typography.labelSmall)
-                Row{TextButton(onClick={onDetail(c)}){Text("Anagrafica")};TextButton(onClick={onPoints(c)}){Text("Pozzetti del collettore")}}
+                Row{TextButton(onClick={onDetail(c)}){Text("Anagrafica")};Spacer(Modifier.weight(1f));Text("›",style=MaterialTheme.typography.headlineSmall)}
             }}
         }}
     }
@@ -225,20 +218,26 @@ fun assetLabel(type:String)=when(type){"MANHOLE"->"Pozzetto";"PUMP_STATION"->"So
 fun modelLabel(model:String)=when(model){"ORDINARY"->"Ordinario";"ASPHALT_EXTERNAL"->"Sotto asfalto · verifica esterna";"ASSET_EXTERNAL"->"Verifica esterna del manufatto";else->"Modello storico"}
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun HistoryList(visits:List<Visit>,points:List<JSONObject>,collectors:List<JSONObject>,pointFilter:String,collectorFilter:String,listState:androidx.compose.foundation.lazy.LazyListState,clear:()->Unit,open:(String)->Unit,cancel:(Visit,String)->Unit){
-    var date by rememberSaveable{mutableStateOf<String?>(null)};var datePicker by remember{mutableStateOf(false)};var showCancelled by rememberSaveable{mutableStateOf(false)};var target by remember{mutableStateOf<Visit?>(null)}
+@Composable fun HistoryList(visits:List<Visit>,points:List<JSONObject>,collectors:List<JSONObject>,pointFilter:String,collectorFilter:String,listState:androidx.compose.foundation.lazy.LazyListState,clear:()->Unit,open:(String)->Unit,focus:(JSONObject)->Unit,newInspection:(JSONObject)->Unit,cancel:(Visit,String)->Unit){
+    var date by rememberSaveable{mutableStateOf<String?>(null)};var datePicker by remember{mutableStateOf(false)};var search by rememberSaveable{mutableStateOf("")};var chosenCollector by rememberSaveable(collectorFilter){mutableStateOf(collectorFilter)};var recent by rememberSaveable{mutableStateOf(true)};var target by remember{mutableStateOf<Visit?>(null)}
     Column(Modifier.fillMaxSize().padding(horizontal=12.dp)){
         Row{TextButton(onClick={datePicker=true}){ActionIcon(R.drawable.ic_calendar);Text(date?:"Filtra per data")};if(date!=null)TextButton(onClick={date=null}){Text("Rimuovi data")}}
         if(pointFilter.isNotBlank()||collectorFilter.isNotBlank())TextButton(onClick=clear){Text("Rimuovi filtro manufatto / collettore")}
-        Row(verticalAlignment=Alignment.CenterVertically){Checkbox(showCancelled,{showCancelled=it});Text("Mostra anche annullati e precedenti al reset")}
-        val filtered=visits.filter{v->(showCancelled||(!isCancelled(v)&&v.sync!="RESET_OBSOLETE"))&&(date==null||visitDay(v).toString()==date)&&(pointFilter.isBlank()||v.manholeId==pointFilter)&&(collectorFilter.isBlank()||points.find{it.getString("id")==v.manholeId}?.memberships()?.contains(collectorFilter)==true)}
+        Field("Cerca pozzetto",search){search=it}
+        Choice("Collettore",chosenCollector,listOf("" to "Tutti")+collectors.filter{!it.optBoolean("archived")}.map{it.getString("id") to it.getString("description")}){chosenCollector=it}
+        FilterChip(selected=recent,onClick={recent=!recent},label={Text("Ultime eseguite")})
+        val filtered=visits.sortedWith(if(recent)compareByDescending{inspectionInstant(it)}else compareBy{inspectionInstant(it)}).filter{v->(!isCancelled(v)&&v.sync!="RESET_OBSOLETE")&&points.find{it.getString("id")==v.manholeId}?.optString("code").orEmpty().contains(search,true)&&(date==null||visitDay(v).toString()==date)&&(pointFilter.isBlank()||v.manholeId==pointFilter)&&(chosenCollector.isBlank()||points.find{it.getString("id")==v.manholeId}?.memberships()?.contains(chosenCollector)==true)}
         if(filtered.isEmpty())Text("Nessuna ispezione nei filtri correnti")
-        LazyColumn(state=listState,modifier=Modifier.weight(1f)){filtered.groupBy{visitDay(it)}.toSortedMap(compareByDescending{it}).forEach{(day,list)->
+        LazyColumn(state=listState,modifier=Modifier.weight(1f)){filtered.groupBy{visitDay(it)}.toSortedMap(if(recent)compareByDescending{it}else compareBy{it}).forEach{(day,list)->
             item{Text(day.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))+" · ${list.size} registrazioni",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(vertical=8.dp))}
             items(list,key={it.id}){v->val p=points.find{it.getString("id")==v.manholeId};val b=JSONObject(v.body)
-                Card(modifier=Modifier.fillMaxWidth().padding(bottom=8.dp),onClick={open(v.id)}){Row(Modifier.padding(12.dp)){
-                    Column(Modifier.weight(1f)){Text(p?.optString("code")?:"Manufatto storico",style=MaterialTheme.typography.titleMedium);if(p!=null)Text(collectorNames(p,collectors),style=MaterialTheme.typography.bodySmall);Text(shown(b.optString("completed_at",b.getString("started_at"))));Text(modelLabel(b.optString("model"))+" · "+if(isCancelled(v))"ANNULLATA" else operational(v.operational));Text(if(hasAnomaly(b))"Anomalie segnalate" else "Nessuna anomalia dichiarata");Text(syncLabel(v.sync),style=MaterialTheme.typography.labelMedium)}
+                Card(modifier=Modifier.fillMaxWidth().padding(bottom=8.dp),onClick={open(v.id)}){Column(Modifier.padding(12.dp)){Row{
+                    Column(Modifier.weight(1f)){Text(p?.optString("code")?:"Manufatto storico",style=MaterialTheme.typography.titleMedium);if(p!=null)Text(collectorNames(p,collectors),style=MaterialTheme.typography.bodySmall);Text(shown(b.optString("completed_at",b.getString("started_at"))));Text(modelLabel(b.optString("model"))+" · "+if(isCancelled(v))"ANNULLATA" else operational(v.operational));Text(if(hasAnomaly(b))"Anomalie segnalate" else "Nessuna anomalia dichiarata");Text(if(v.operational=="BOZZA"&&v.sync=="RICEVUTO_SERVER")"Bozza condivisa" else syncLabel(v.sync),style=MaterialTheme.typography.labelMedium)}
+                    if(p!=null)IconButton(onClick={focus(p)}){Icon(painterResource(R.drawable.ic_target),"Centra su mappa")}
                     if(!isCancelled(v))IconButton(onClick={target=v}){Icon(painterResource(R.drawable.ic_trash),"Annulla ispezione")}
+                }
+                if(gpsQuality(lastEvidence(b))!="RELIABLE")Text(if(gpsQuality(lastEvidence(b))=="IMPRECISE")"GPS impreciso" else "GPS non affidabile",color=MaterialTheme.colorScheme.error)
+                if(p!=null)TextButton(onClick={newInspection(p)},modifier=Modifier.align(Alignment.End)){Text("Nuova ispezione",color=ConfirmedGreen)}
                 }}
             }
         }}

@@ -1,5 +1,5 @@
 # Documentazione COLL-PAT
 
-Corrente: [architettura](ARCHITECTURE.md), [modello dati](DATA_MODEL.md), [GIS](GIS.md), [Supabase](SUPABASE.md), [offline](OFFLINE.md), [requisiti v0.13](REQUIREMENTS-v0.13.md), [collaudo v0.13](VALIDATION-v0.13.md), [release v0.13](RELEASE-v0.13.md).
+Corrente v0.14: [architettura](ARCHITECTURE.md), [modello dati](DATA_MODEL.md), [Supabase](SUPABASE.md), [offline](OFFLINE.md), [GIS](GIS.md), [requisiti](REQUIREMENTS-v0.14.md), [collaudo](VALIDATION-v0.14.md), [pre-release](RELEASE-v0.14.md).
 
-Storico: [v0.12](VALIDATION-v0.12.md), [v0.11](VALIDATION-v0.11.md), [documenti tecnici precedenti](history/v0.12/README.md). OPERATIONS, PILOT-CHECKLIST, ANALISI_FUNZIONALE, DEMO-TELEFONO e VALIDATION senza versione descrivono il pilota precedente: per decisioni v0.13 prevalgono i documenti correnti qui elencati.
+Storico: [collaudo v0.13](VALIDATION-v0.13.md), [architettura v0.13](history/v0.13/ARCHITECTURE.md), [v0.12](history/v0.12/README.md). I documenti del pilota senza versione restano riferimenti storici; per il comportamento attuale prevalgono i documenti v0.14.

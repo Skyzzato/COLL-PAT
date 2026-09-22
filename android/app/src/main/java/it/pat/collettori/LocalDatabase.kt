@@ -5,9 +5,9 @@ import kotlinx.coroutines.flow.Flow
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Entity(tableName="visits", indices=[Index("owner"),Index("manholeId")])
-data class Visit(@PrimaryKey val id:String,val owner:String,val manholeId:String,val datasetId:String,val body:String,val operational:String="BOZZA",val sync:String="SALVATO_LOCALMENTE",val receipt:String?=null,val error:String?=null)
-@Entity(tableName="outbox", indices=[Index("owner"),Index(value=["visitId","revision"],unique=true)])
+@Entity(tableName="visits", primaryKeys=["owner","id"],indices=[Index("owner"),Index("manholeId")])
+data class Visit(val id:String,val owner:String,val manholeId:String,val datasetId:String,val body:String,val operational:String="BOZZA",val sync:String="SALVATO_LOCALMENTE",val receipt:String?=null,val error:String?=null)
+@Entity(tableName="outbox", indices=[Index("owner"),Index(value=["owner","visitId","revision"],unique=true)])
 data class Pending(@PrimaryKey val operationId:String,val owner:String,val visitId:String,val revision:Int,val body:String,val state:String="IN_ATTESA",val error:String?=null,
     @ColumnInfo(defaultValue="'legacy'") val project:String="legacy", @ColumnInfo(defaultValue="-1") val generation:Long=-1,
     @ColumnInfo(defaultValue="1") val payloadVersion:Int=1, @ColumnInfo(defaultValue="'inspection'") val kind:String="inspection")
@@ -35,7 +35,7 @@ interface PilotDao {
     @Query("UPDATE outbox SET state='IN_ATTESA', error=NULL WHERE owner=:owner AND state IN ('AUTH_REQUIRED','IN_CORSO') AND payloadVersion=2 AND generation>=0") suspend fun retryBlocked(owner:String)
     @Query("SELECT * FROM outbox WHERE owner=:owner ORDER BY rowid") suspend fun allPending(owner:String):List<Pending>
     @Query("SELECT * FROM outbox WHERE owner=:owner ORDER BY rowid") fun outbox(owner:String):Flow<List<Pending>>
-    @Query("SELECT * FROM outbox WHERE visitId=:id") suspend fun pendingVisit(id:String):List<Pending>
+    @Query("SELECT * FROM outbox WHERE visitId=:id AND owner=:owner") suspend fun pendingVisit(id:String,owner:String):List<Pending>
     @Insert suspend fun enqueue(pending:Pending)
     @Upsert suspend fun updatePending(pending:Pending)
     @Query("DELETE FROM outbox WHERE operationId=:id") suspend fun acknowledge(id:String)
@@ -58,7 +58,7 @@ interface PilotDao {
     @Query("DELETE FROM settings WHERE owner=:owner AND (`key` LIKE 'photos:%' OR `key` LIKE 'identification:%' OR `key` LIKE 'history:%' OR `key` LIKE 'revision:%' OR `key` LIKE 'photo-revision:%' OR `key` LIKE 'snapshot:%')") suspend fun clearInspectionSettings(owner:String)
 }
 
-@Database(entities=[Visit::class,Pending::class,OfflinePackage::class,Setting::class,CatalogItem::class,Audit::class,ImportRecord::class],version=2,exportSchema=true)
+@Database(entities=[Visit::class,Pending::class,OfflinePackage::class,Setting::class,CatalogItem::class,Audit::class,ImportRecord::class],version=3,exportSchema=true)
 abstract class LocalDatabase:RoomDatabase(){abstract fun dao():PilotDao}
 
 val MIGRATION_1_2=object:Migration(1,2){override fun migrate(db:SupportSQLiteDatabase){
@@ -74,4 +74,17 @@ val MIGRATION_1_2=object:Migration(1,2){override fun migrate(db:SupportSQLiteDat
     db.execSQL("CREATE INDEX IF NOT EXISTS index_audit_visitId ON audit(visitId)")
     db.execSQL("CREATE TABLE IF NOT EXISTS imports (id TEXT NOT NULL PRIMARY KEY, owner TEXT NOT NULL, source TEXT NOT NULL, hash TEXT NOT NULL, mapping TEXT NOT NULL, report TEXT NOT NULL, at TEXT NOT NULL, state TEXT NOT NULL)")
     db.execSQL("CREATE INDEX IF NOT EXISTS index_imports_owner ON imports(owner)")
+}}
+
+val MIGRATION_2_3=object:Migration(2,3){override fun migrate(db:SupportSQLiteDatabase){
+    db.execSQL("CREATE TABLE visits_v3 (id TEXT NOT NULL, owner TEXT NOT NULL, manholeId TEXT NOT NULL, datasetId TEXT NOT NULL, body TEXT NOT NULL, operational TEXT NOT NULL, sync TEXT NOT NULL, receipt TEXT, error TEXT, PRIMARY KEY(owner,id))")
+    db.execSQL("INSERT INTO visits_v3 SELECT id,owner,manholeId,datasetId,body,operational,sync,receipt,error FROM visits")
+    db.execSQL("DROP TABLE visits")
+    db.execSQL("ALTER TABLE visits_v3 RENAME TO visits")
+    db.execSQL("CREATE INDEX index_visits_owner ON visits(owner)")
+    db.execSQL("CREATE INDEX index_visits_manholeId ON visits(manholeId)")
+    db.execSQL("DROP INDEX index_outbox_visitId_revision")
+    db.execSQL("CREATE UNIQUE INDEX index_outbox_owner_visitId_revision ON outbox(owner,visitId,revision)")
+    // A v0.13 submission cannot be silently re-attributed or have GPS thresholds invented.
+    db.execSQL("UPDATE outbox SET state='LEGACY_SUSPENDED', error='Invio precedente alla v0.14 conservato: esportare l’archivio per il recupero' WHERE kind='inspection' OR (kind='cancel' AND visitId IN (SELECT visitId FROM outbox WHERE kind='inspection'))")
 }}

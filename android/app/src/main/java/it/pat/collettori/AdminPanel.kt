@@ -20,33 +20,16 @@ import org.json.JSONObject
 import java.util.UUID
 
 @Composable fun AccountPanel(repo:Repository,onChange:()->Unit){
-    var expanded by remember{mutableStateOf(repo.store.get()==null)};var url by rememberSaveable{mutableStateOf("https://zzipvrnhndigepufhkcj.supabase.co")}
-    var publicKey by rememberSaveable{mutableStateOf("")};var project by rememberSaveable{mutableStateOf(AppSpec.LOCAL_PROJECT)};var email by rememberSaveable{mutableStateOf("")};var password by remember{mutableStateOf("")}
-    var busy by remember{mutableStateOf(false)};var message by remember{mutableStateOf("")};val scope=rememberCoroutineScope()
-    Column(Modifier.padding(vertical=12.dp)){
-        TextButton(onClick={expanded=!expanded}){Text("Account · "+if(repo.authenticated())repo.store.get()!!.optString("username") else "configura Supabase Auth")}
-        if(expanded){
-            Text("Accedi prima di creare ispezioni da inviare. Ogni account/progetto conserva un archivio separato; il lavoro locale precedente non viene attribuito a un altro autore.",style=MaterialTheme.typography.bodySmall)
-            if(repo.authenticated()){
-                Text("Ruolo server: "+repo.store.get()!!.optString("role"))
-                OutlinedButton(onClick={repo.store.clear();onChange()}){Text("Esci / cambia account")}
-            }else{
-                Field("URL progetto Supabase",url){url=it};Field("Chiave pubblica publishable / anon",publicKey){publicKey=it};Field("UUID progetto applicativo",project){project=it};Field("Email account Auth",email){email=it}
-                OutlinedTextField(password,{password=it},label={Text("Password Auth")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
-                Button(enabled=!busy,onClick={busy=true;scope.launch{try{repo.api.login(url,publicKey,email,password,project);password="";repo.prepareWorkspace();repo.reconcile();repo.dao.resumeAuth(repo.owner());repo.syncNow();onChange()}catch(e:Exception){message=e.message?:"Accesso non riuscito"}finally{busy=false}}}){Text("Accedi al server")}
-                Text("admin/admin sblocca soltanto la dashboard locale; non è una password Supabase.",style=MaterialTheme.typography.bodySmall)
-            }
-            if(busy)LinearProgressIndicator(Modifier.fillMaxWidth());if(message.isNotBlank())Text(message,color=MaterialTheme.colorScheme.error)
-        }
-    }
+    Column{Text(repo.store.get()?.optString("username")?:"Nessun account")
+        OutlinedButton(onClick={repo.store.clear();onChange()}){Text("Logout")}}
 }
 
 @Composable fun AdminPanel(repo:Repository,catalog:List<CatalogItem>,visitCount:Int,onMessage:(String)->Unit){
-    if(!BuildConfig.DEV_ADMIN)return
-    var expanded by rememberSaveable{mutableStateOf(false)};var unlocked by remember{mutableStateOf(false)};var user by remember{mutableStateOf("")};var password by remember{mutableStateOf("")};var form by remember{mutableStateOf<JSONObject?>(null)}
+    if(!BuildConfig.DEV_ADMIN&&repo.store.get()?.optString("role")!="admin")return
+    var expanded by rememberSaveable{mutableStateOf(false)};var unlocked by remember{mutableStateOf(repo.authenticated()&&repo.store.get()?.optString("role")=="admin")};var user by remember{mutableStateOf("")};var password by remember{mutableStateOf("")};var form by remember{mutableStateOf<JSONObject?>(null)}
     var archive by remember{mutableStateOf<CatalogItem?>(null)};var reset by remember{mutableStateOf(false)};var resetText by remember{mutableStateOf("")};var resetStatus by remember{mutableStateOf<JSONObject?>(null)}
     var import by remember{mutableStateOf(false)};var busy by remember{mutableStateOf(false)};val scope=rememberCoroutineScope()
-    fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:Exception){onMessage(e.message?:"Operazione amministrativa non riuscita")}finally{busy=false}}}
+    fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:Exception){onMessage(friendlyError(e))}finally{busy=false}}}
     TextButton(onClick={expanded=!expanded}){Text("Admin dashboard")}
     if(expanded)Column{
         Text("Dashboard temporanea di sviluppo. Sblocco locale admin/admin. Ogni scrittura server verifica il ruolo amministratore Auth.")
@@ -59,7 +42,6 @@ import java.util.UUID
                 Row{TextButton(modifier=Modifier.weight(1f),onClick={form=JSONObject(item.body)}){Text(c.getString("description")+" · "+c.getString("code")+if(c.optBoolean("archived"))" (archiviato)" else "")};IconButton(enabled=!busy&&!c.optBoolean("archived"),onClick={archive=item}){Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_trash),"Archivia collettore")}}
             }
             OutlinedButton(onClick={import=true}){Text("Importa shapefile dal telefono")}
-            OutlinedButton(enabled=!busy,onClick={task{repo.publishSeed();onMessage("Anagrafica sintetica accodata; attendere ricevuta server")}}){Text("Pubblica dati sintetici locali")}
             OutlinedButton(enabled=!busy,onClick={task{resetStatus=repo.reconcile();resetText="";reset=true}}){Text("Azzera tutte le ispezioni")}
             Text("Locali nell'account: $visitCount. Il reset richiede rete, backup privato e permessi amministrativi reali.",style=MaterialTheme.typography.bodySmall)
         }
@@ -71,12 +53,14 @@ import java.util.UUID
 }
 
 @Composable fun CollectorForm(initial:JSONObject,onDismiss:()->Unit,onSave:(JSONObject)->Unit){
+    var color by remember{mutableStateOf(collectorColor(initial))}
     var code by remember{mutableStateOf(initial.getString("code"))};var description by remember{mutableStateOf(initial.getString("description"))};var type by remember{mutableStateOf(initial.getString("type"))}
     var first by remember{mutableStateOf(initial.getInt("visits_h1").toString())};var second by remember{mutableStateOf(initial.getInt("visits_h2").toString())};var hours by remember{mutableStateOf(initial.getDouble("hours_km_visit").toString().replace('.',','))}
     var length by remember{mutableStateOf(initial.numberOrNull("length_m")?.toString()?.replace('.',',')?:"")};var source by remember{mutableStateOf(initial.getString("length_source"))};var complete by remember{mutableStateOf(initial.optBoolean("length_complete"))};var error by remember{mutableStateOf("")}
     Dialog(onDismissRequest=onDismiss,properties=DialogProperties(usePlatformDefaultWidth=false)){Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()){Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)){
         Text("Anagrafica collettore",style=MaterialTheme.typography.headlineSmall);Text("UUID stabile: "+initial.getString("id"),style=MaterialTheme.typography.labelSmall)
         Field("Codice obbligatorio",code){code=it};Field("Descrizione obbligatoria",description){description=it};Choice("Tipologia",type,collectorTypes.map{it to it}){type=it}
+        Choice("Colore tracciato",color,listOf("#176D73" to "Verde petrolio","#254EBC" to "Blu","#783E9F" to "Viola","#8D4617" to "Marrone","#AF235A" to "Magenta")){color=it}
         Field("Numero visite 1° semestre",first){first=it};Field("Numero visite 2° semestre",second){second=it};Field("Ore per km per visita",hours){hours=it}
         Field("Lunghezza in metri (vuoto = sconosciuta)",length){length=it;source=if(it.isBlank())"UNAVAILABLE" else "DECLARED"}
         Text("Origine: $source");Row{Checkbox(complete,{complete=it});Text("Rete completa / totale dichiarato",Modifier.padding(top=12.dp))}
@@ -85,8 +69,8 @@ import java.util.UUID
         Button(onClick={try{
             val a=first.toIntOrNull()?:error("Visite: interi non negativi");val b=second.toIntOrNull()?:error("Visite: interi non negativi");val h=decimalItalian(hours)?:error("Ore: numero non negativo")
             val l=if(length.isBlank())null else decimalItalian(length)?:error("Lunghezza non valida")
-            val next=JSONObject(initial.toString()).put("code",code.trim()).put("description",description.trim()).put("type",type).put("visits_h1",a).put("visits_h2",b).put("hours_km_visit",h).put("length_m",l?:JSONObject.NULL).put("length_source",if(l==null)"UNAVAILABLE" else source).put("length_complete",complete)
+            val next=JSONObject(initial.toString()).put("display_color",color).put("code",code.trim()).put("description",description.trim()).put("type",type).put("visits_h1",a).put("visits_h2",b).put("hours_km_visit",h).put("length_m",l?:JSONObject.NULL).put("length_source",if(l==null)"UNAVAILABLE" else source).put("length_complete",complete)
             validateCollector(next);onSave(next)
-        }catch(e:Exception){error=e.message?:"Campi non validi"}}){Text("Salva anagrafica")};TextButton(onClick=onDismiss){Text("Indietro")}
+        }catch(e:Exception){error=friendlyError(e)}}){Text("Salva anagrafica")};TextButton(onClick=onDismiss){Text("Indietro")}
     }}}
 }

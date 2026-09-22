@@ -1,9 +1,17 @@
-# Archivio e cartografia offline — COLL-PAT v0.13
+# Offline e sincronizzazione — v0.14
 
-Schede, outbox, anagrafica e preferenze risiedono in Room, foto e originali GIS in files privati. Non dipendono dalla cache cartografica. Le bozze sono solo locali; gli invii strutturati richiedono sessione Auth e rete. Disinstallazione o cancellazione dati rimuovono l'archivio; aggiornare la stessa variante conserva database e firma.
+La sessione persistente consente di lavorare sui dati disponibili nel proprio archivio senza rete. I dati di altri account restano isolati. La demo è un archivio distinto, avviato esplicitamente dalla schermata iniziale.
 
-Unica cache nominale MapLibre: **209715200 byte (200 MiB)**, costante AppSpec.MAP_CACHE_BYTES. Nessuna seconda cache OkHttp; il vecchio `osm-http` è rimosso in background. User-Agent COLL-PAT/versione e attribuzione OpenStreetMap. [API cache MapLibre](https://maplibre.org/maplibre-native/android/api/-map-libre%20-native%20-android/org.maplibre.android.offline/-offline-manager/set-maximum-ambient-cache-size.html).
+Le bozze e le foto si salvano subito sul telefono. Per gli account autenticati il worker trasmette le modifiche appena possibile, conservando un payload immutabile per ogni tentativo. Una ricevuta valida chiude solo la modifica corrispondente; modifiche successive rimangono in attesa. Il pulsante Sincronizza effettua anche un aggiornamento del catalogo e del riepilogo ispezioni. Lo storico completo viene richiesto entrando nella pagina Ispezioni; l’export richiede soltanto il semestre.
 
-Le risorse visitate possono essere riutilizzate secondo le regole HTTP/MapLibre; cache incompleta, scaduta o rimossa non equivale a un pacchetto offline. Nessun download preventivo di aree/zoom dai server standard OSM. Dati locali e selezione manuale restano accessibili anche senza base.
+Un conflitto di revisione non sostituisce i dati locali. La scheda spiega il problema e permette di conservare una copia di recupero prima di aprire la versione server. Dopo la risoluzione l’operatore decide come riportare le proprie modifiche: nessuna sovrascrittura automatica della bozza remota.
 
-WorkManager riprende con rete, avvio e ritorno in primo piano. Android può sospendere il processo; dopo arresto forzato occorre riaprire l'app. Nessun invio a telefono spento. Nessuna posizione in background richiesta per trasmettere. Sessione scaduta, conflitto e generation obsoleta sono stati distinti; i dati rimangono conservati.
+Le fotografie remote mostrano i metadati condivisi anche prima del download. Per vederle senza rete occorre averle aperte e memorizzate almeno una volta. Il nome Storage rimane lo stesso durante i retry. Originali locali e audit rimangono privati.
+
+Le soglie GPS vengono incluse nella rilevazione. Modificare le preferenze non cambia la qualità storica. Il controllo completo richiede accuracy e distanza entro soglia, coordinate valide, permesso preciso, misura non simulata e non troppo vecchia all’acquisizione. L’impedimento può conservare un tentativo fallito con motivazione.
+
+La mappa usa l’unica cache MapLibre preesistente da 200 MiB; non è un pacchetto cartografico garantito. Le aree mai caricate possono mancare. Nessun download preventivo dai server OSM standard.
+
+Una policy server già nota di versione obsoleta blocca l’app anche offline. In assenza di rete e di una policy nota, la cache rimane utilizzabile. Dopo arresto forzato i lavori riprendono alla riapertura.
+
+Le operazioni v0.13 ancora in attesa sono conservate nell’archivio di recupero, senza inventare autori o soglie GPS. [Documentazione v0.13](history/v0.13/OFFLINE.md).

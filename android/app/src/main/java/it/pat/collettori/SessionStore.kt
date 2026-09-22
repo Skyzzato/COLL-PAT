@@ -14,8 +14,8 @@ import javax.crypto.spec.GCMParameterSpec
 import java.time.Instant
 
 /** Only opaque session tokens, encrypted with an Android Keystore key. Never passwords. */
-class SessionStore(context:Context){
-    private val prefs=context.getSharedPreferences("session",Context.MODE_PRIVATE)
+class SessionStore(context:Context,preferenceName:String="session"){
+    private val prefs=context.getSharedPreferences(preferenceName,Context.MODE_PRIVATE)
     private val alias="collettori-session-v1"
     private fun key():SecretKey{
         val ks=KeyStore.getInstance("AndroidKeyStore").apply{load(null)}

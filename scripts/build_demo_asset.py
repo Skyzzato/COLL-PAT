@@ -1,4 +1,4 @@
-"""Current seed entry point; historical Trento source remains immutable."""
-from build_v013_seed import main
+"""Current seed entry point; historical Trento sources remain immutable."""
+from build_v014_seed import main
 main()
-print('COLL-PAT: Trento e Lavis, 16 punti e 14 tratti sintetici')
+print("COLL-PAT: Trento, Lavis e Via Gilli, 22 punti e 19 tratti sintetici")

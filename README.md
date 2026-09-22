@@ -1,52 +1,50 @@
-# COLL-PAT — v0.13 prerelease
+# COLL-PAT — v0.14 pre-release
 
-App Android per anagrafica e ispezioni di collettori e manufatti. **Trento e Lavis inclusi sono sintetici**, non infrastrutture PAT. Le importazioni mantengono provenienza e tipo originali. Il GPS verifica la compatibilità della prossimità, non l'apertura o la qualità del lavoro.
+App Android per cartografia, pozzetti, ispezioni periodiche, GPS e fotografie, con cache locale e sincronizzazione Supabase. I tre collettori demo di Trento, Lavis e Via Gilli sono sintetici e separati dagli account server.
 
-[Prerelease v0.13](https://github.com/Skyzzato/COLL-PAT/releases/tag/v0.13) · [APK demo](https://github.com/Skyzzato/COLL-PAT/releases/download/v0.13/COLL-PAT-v0.13-demo.apk) · [Collaudo e limiti](docs/VALIDATION-v0.13.md)
+[Pre-release v0.14](https://github.com/Skyzzato/COLL-PAT/releases/tag/v0.14) · [APK demo](https://github.com/Skyzzato/COLL-PAT/releases/download/v0.14/COLL-PAT-v0.14-demo.apk) · [Collaudo](docs/VALIDATION-v0.14.md) · [Requisiti verificati](docs/REQUIREMENTS-v0.14.md)
 
-La variante distribuita conserva `it.pat.collettori.pilot.demo` e la firma debug già usata nella v0.12. VersionCode 13; versionName 0.13-demo. Aggiornare sopra la stessa variante, senza disinstallarla. `build.gradle.kts` è l'unica fonte di versione/build; i payload leggono BuildConfig.
+## Uso
 
-## Utilizzo
+- Login o registrazione email/password; nella variante demo è disponibile **Apri demo offline**. Il recupero password è esplicitamente disattivato. Gli account nuovi richiedono l’abilitazione al progetto da parte del responsabile.
+- **Mappa | Collettori | Pozzetti | Ispezioni | Impostazioni**. La card del collettore apre i suoi pozzetti. Occhio e mirino conservano visibilità e centraggio; la bandierina attiva la selezione multipla.
+- I pozzetti compaiono al livello di zoom configurato. Colore = ultima ispezione valida e frequenza prevista; il segno sotto asfalto è indipendente. Filtri per stato, collettore e codice.
+- Le bozze degli account collegati vengono condivise alla sincronizzazione. Il lavoro locale resta disponibile senza rete. Una revisione obsoleta viene fermata e conservata: dalla scheda si può salvare una copia di recupero e aprire la versione server.
+- Accuratezza e distanza GPS hanno soglie separate. Un controllo completo richiede una misura affidabile; un impedimento conserva anche un tentativo fallito. Le misure eliminate spariscono dall’interfaccia, rimanendo nell’audit.
+- **Impostazioni → Ispezioni → Esporta ispezioni semestre** salva un CSV UTF-8 con `;`, intestazioni, note e indicazione foto SI/NO tramite Storage Access Framework.
 
-1. **Mappa | Collettori | Pozzetti | Ispezioni | Altro**. Occhio: visibilità locale persistente; mirino: inquadra e rende visibile. La pagina Collettori e il selettore mappa riutilizzano lo stesso componente.
-2. Da un manufatto: nuova ispezione oppure riprendi bozza. Ogni nuova ispezione ha un UUID distinto, anche nella stessa giornata.
-3. **Salva bozza** conserva solo localmente. **Registra Ispezione** e **Registra impedimento** salvano scheda e outbox in una transazione Room. La coda locale non è una ricevuta server.
-4. Modello sotto asfalto: verifica esterna valida periodicamente, senza dichiarazioni interne. Impedimento: motivo obbligatorio, tentativo GPS anche fallito, nessun controllo periodico completato.
-5. Cestino: annullamento con motivazione e audit, originale preservato. Calendario: giornata di esecuzione Europe/Rome.
-6. In **Altro → Account**, collegare Supabase Auth **prima di creare lavoro da trasmettere**. Il lavoro locale senza account non viene attribuito automaticamente a chi accede dopo. Tornare all'archivio locale uscendo dall'account.
+## Aggiornamento e server
 
-## Server e dati
+VersionCode **14**, versione base **0.14**. L’APK distribuita mantiene `it.pat.collettori.pilot.demo`, suffisso `-demo` e firma debug storica. Aggiornare sopra la stessa variante. Room 1→2→3 conserva le schede e separa le copie locali della stessa bozza fra account.
 
-**Android → Supabase Auth + RPC HTTPS → PostgreSQL/PostGIS**, senza FastAPI obbligatorio. La demo permette invii strutturati reali quando configurata; soltanto il caricamento foto è simulato. Le immagini sono reali e private sul telefono, senza URL remoti inventati.
+Le migrazioni SQL `202609220003_coll_pat_v014.sql` e `202609220004_coll_pat_photos.sql` sono additive e ripetibili dopo le due migrazioni v0.13. Estendono le ispezioni esistenti, aggiungono metadati foto e configurazione versione, senza duplicare il catalogo.
 
-**Migrazioni necessarie: SÌ.** Room 1→2 esplicita e non distruttiva. Due nuove migrazioni SQL; setup Auth/amministratore in [SUPABASE](docs/SUPABASE.md). Il vecchio backend è conservato per compatibilità storica e test, non è il server della v0.13. Le vecchie code sono sospese, mai rietichettate con la nuova generazione.
+Configurazione Android in `android/local.properties` o proprietà Gradle: **SUPABASE_URL** e **SUPABASE_PUBLISHABLE_KEY**. Esempio senza credenziali: [local.properties.example](android/local.properties.example). Nessuna chiave amministrativa nell’APK. [Procedura Supabase e autorizzazioni](docs/SUPABASE.md).
 
-Dashboard di sviluppo nella variante demo: sblocco **locale admin/admin**, separato dal ruolo amministratore Auth. Nuovo/modifica/archivia collettore, importazione ZIP/shapefile nativa, backup e reset online. Nessuna duplicazione. Il seed è una tantum per archivio/account; una pubblicazione esplicita verifica prima il catalogo remoto.
-
-## Compilazione e verifiche
+## Build e verifiche
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build-android.ps1 -Demo
-# Android strumentale (emulatore o dispositivo collegato)
 cd android
+.\gradlew.bat :app:lint :app:assembleDemoAndroidTest -PtestBuildType=demo
+# Emulatore dedicato: i task connected possono disinstallare la variante al termine.
 .\gradlew.bat :app:connectedDemoAndroidTest -PtestBuildType=demo
 ```
 
-JDK 17/21, SDK 36. Dipendenze bloccate; nessuna nuova libreria Android per l'importazione. APK: `android/app/build-pilot/outputs/apk/demo/app-demo.apk`.
+APK: `android/app/build-pilot/outputs/apk/demo/app-demo.apk`. JDK 17/21, SDK 36, dipendenze bloccate.
 
 ```powershell
-# PostgreSQL/PostGIS locale isolato, credenziale di test scelta dal collaudatore
 $env:COLL_PAT_SQL_TEST_URL='postgresql://postgres@127.0.0.1:55433/postgres'
 $env:POSTGIS_TEST_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:55433/postgres'
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-`scripts/build_v013_seed.py` genera il seed deterministico conservando gli UUID Trento storici. `scripts/build_gis_test_fixtures.py` genera esclusivamente ZIP sintetici per i test. Test SQL senza variabile dedicata: skip esplicito, mai uso implicito di `.env` remoto.
+I test SQL creano database temporanei su localhost e non leggono credenziali remote da `.env`. `scripts/build_demo_asset.py` rigenera il seed v0.14 mantenendo gli UUID precedenti.
 
-## Limiti della prerelease
+## Limiti verificati
 
-Configurazione Auth/pubblica e migrazioni remote richieste. Il progetto remoto non è stato collaudato in questa sessione: connessione PostgreSQL configurata in timeout e nessuna sessione Auth disponibile. Reset iniziale **non eseguito**. Foto locali; cache nominale unica 200 MiB (209715200 byte), potenzialmente incompleta o rimossa dal sistema. Nessun download preventivo OSM. Nessun collaudo sul campo o telefono fisico.
+Migrazioni e autorizzazioni collaudate su PostgreSQL/PostGIS locale; APK su emulatore API 35. Il progetto Supabase remoto e il servizio Storage reale non sono stati configurati/collaudati in questa sessione. I test Auth HTTP usano risposte controllate; non rappresentano una registrazione remota effettuata.
 
-Importazione: punti e polilinee; EPSG 4326, 3857, 32632/33, 25832/33; UTF-8, Windows-1252, ISO-8859-1. Massimo ZIP 32 MiB, 10000 oggetti; una geometria oltre 4 MiB richiede suddivisione. Gli invii più grandi usano staging privato e pubblicazione atomica. Multipart lette ma da separare in rami con chiavi distinte prima della pubblicazione topologica.
+Gli invii v0.13 ancora pendenti sono conservati e sospesi per recupero esplicito; non vengono inventate soglie GPS mancanti. Le foto sono disponibili offline dopo il primo download. La cache cartografica rimane 200 MiB, senza garanzia sulle aree mai visitate. Nessun collaudo fisico sul campo.
 
-[Requisiti → implementazione → test](docs/REQUIREMENTS-v0.13.md) · [Architettura](docs/ARCHITECTURE.md) · [GIS](docs/GIS.md) · [Modello dati](docs/DATA_MODEL.md) · [Roadmap](ROADMAP.md) · [Documenti storici v0.12](docs/history/v0.12/README.md)
+[Architettura](docs/ARCHITECTURE.md) · [Modello dati](docs/DATA_MODEL.md) · [Offline](docs/OFFLINE.md) · [GIS](docs/GIS.md) · [Changelog](CHANGELOG.md)

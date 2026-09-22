@@ -14,7 +14,8 @@ interface ManholeIdentificationService {
 /** Suggestion only: the operator always confirms the physical asset. */
 object GpsIdentification:ManholeIdentificationService {
     override val method=IdentificationMethod.GPS
-    override fun identify(points:List<JSONObject>, position:JSONObject?):IdentificationResult {
+    override fun identify(points:List<JSONObject>, position:JSONObject?)=identify(points,position,FieldSettings())
+    fun identify(points:List<JSONObject>, position:JSONObject?,settings:FieldSettings):IdentificationResult {
         fun empty(state:String)=IdentificationResult(state,emptyList(),emptyMap())
         val lat=position?.numberOrNull("latitude")?:return empty("Posizione non disponibile")
         val lon=position.numberOrNull("longitude")?:return empty("Posizione non disponibile")
@@ -24,8 +25,8 @@ object GpsIdentification:ManholeIdentificationService {
         if(!position.isNull("error") || position.optBoolean("mock",false))return empty("Posizione non affidabile")
         val distances=points.associate{it.getString("id") to GpsRule.distance(lat,lon,it.getDouble("latitude"),it.getDouble("longitude"))}
         val accuracy=position.numberOrNull("accuracy_m")
-        if(accuracy==null || !accuracy.isFinite() || accuracy<0 || accuracy>50 || position.optString("permission")!="PRECISE")return IdentificationResult("Posizione troppo imprecisa",emptyList(),distances)
-        val radius=(accuracy+5).coerceIn(8.0,55.0)
+        if(accuracy==null || !accuracy.isFinite() || accuracy<0 || accuracy>settings.maxAccuracy || position.optString("permission")!="PRECISE")return IdentificationResult("Posizione troppo imprecisa",emptyList(),distances)
+        val radius=settings.maxDistance
         val candidates=distances.filterValues{it<=radius}.toList().sortedBy{it.second}.map{it.first}
         val state=when {
             candidates.isEmpty()->"Nessun pozzetto compatibile"

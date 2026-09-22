@@ -47,7 +47,7 @@ class StartupWorkflowTest {
         repo.prepareDemo()
         val pack=repo.dao.packagesNow(repo.owner()).first{it.id==AppSpec.PACKAGE}
         val points=JSONObject(pack.body).getJSONArray("points").objects()
-        assertEquals(16,points.size)
+        assertEquals(22,points.size)
         val visit=repo.begin(points.first(),pack,"LIST")
         val body=JSONObject(visit.body)
         val sheet=body.getJSONObject("sheet")
@@ -67,14 +67,15 @@ class StartupWorkflowTest {
         val event=LocationCapture(context).collect(body,rule)
         event.put("local_evaluation",GpsRule.evaluate(event,points.first(),points,rule))
         repo.appendEvent(visit.id,event)
-        repo.complete(visit.id,body,"COMPLETO")
+        body.getJSONObject("sheet").put("impediment_reason","GPS non disponibile nel collaudo")
+        repo.complete(visit.id,body,"IMPEDITO")
         val reopened=Repository(context)
         try {
             val saved=reopened.dao.visit(visit.id,visit.owner)!!
-            assertEquals("COMPLETO",saved.operational)
+            assertEquals("IMPEDITO",saved.operational)
             assertEquals("IN_ATTESA",saved.sync)
             assertEquals(1,PhotoRepository(reopened).list(saved).size)
-            assertEquals(1,reopened.dao.pendingVisit(visit.id).size)
+            assertEquals(1,reopened.dao.pendingVisit(visit.id,visit.owner).size)
         } finally {reopened.db.close()}
         Unit
     }

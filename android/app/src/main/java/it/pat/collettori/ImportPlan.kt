@@ -12,7 +12,7 @@ data class ImportPlan(val items:List<CatalogItem>,val preview:JSONObject,val pro
 
 object ImportPlanner {
     fun propose(layer:ShapeLayer):LayerMapping {
-        val aliases=mapOf("key" to listOf("source_id","id","fid","uuid"),"code" to listOf("code","codice","cod","name"),"description" to listOf("description","descrizion","descr","nome"),"collector" to listOf("collector","collettore","coll_cod"),"asset_type" to listOf("tipo","type","asset_type"),"sequence" to listOf("sequence","sequenza","ordine"),"chainage" to listOf("progressiv","chainage","prog_m"),"branch" to listOf("ramo","branch"),"from" to listOf("from_id","da","inizio"),"to" to listOf("to_id","a","fine"),"previous" to listOf("prev_id","precedente"),"next" to listOf("next_id","successivo"))
+        val aliases=mapOf("key" to listOf("source_id","id","fid","uuid"),"code" to listOf("code","codice","cod","name"),"description" to listOf("description","descrizion","descr","nome"),"collector" to listOf("collector","collettore","coll_cod"),"asset_type" to listOf("tipo","type","asset_type"),"under_asphalt" to listOf("under_asph","asfalto","sotto_asf"),"sequence" to listOf("sequence","sequenza","ordine"),"chainage" to listOf("progressiv","chainage","prog_m"),"branch" to listOf("ramo","branch"),"from" to listOf("from_id","da","inizio"),"to" to listOf("to_id","a","fine"),"previous" to listOf("prev_id","precedente"),"next" to listOf("next_id","successivo"))
         return LayerMapping(layer.name,aliases.mapValues{(_,options)->layer.fields.firstOrNull{it.lowercase() in options}?:""})
     }
     fun plan(archive:ShapeArchive,mappings:List<LayerMapping>,source:String,fallbackCollector:String,mode:String,orderConfirmed:Boolean,allowNewKeys:Boolean,tolerance:Double,existing:List<CatalogItem>,owner:String):ImportPlan {
@@ -44,6 +44,8 @@ object ImportPlanner {
                 val p=JSONObject().put("id",id).put("code",code).put("description",map.value(feature,"description")).put("latitude",coord.getDouble(1)).put("longitude",coord.getDouble(0))
                     .put("collectors",JSONArray((old?.memberships().orEmpty()+members).distinct())).put("asset_type",map.value(feature,"asset_type").ifBlank{"UNKNOWN"}).put("synthetic",false).put("uncertainty_m",JSONObject.NULL)
                     .put("source_identity",if(key.isBlank())"$source|${layer.name}|point|new:$run:$id" else "$source|${layer.name}|point|$key").put("source_key",key).put("source",source).put("source_layer",layer.name)
+                val asphalt=map.value(feature,"under_asphalt").trim().lowercase()
+                p.put("under_asphalt",if(asphalt.isBlank())old?.optBoolean("under_asphalt")?:false else when(asphalt){"1","true","si","sì","yes"->true;"0","false","no"->false;else->error("Campo sotto asfalto non valido: usare sì/no o 1/0")})
                 // Preserve established topology when a partial file supplies no replacements.
                 listOf("previous_id","previous_distance_m","chainage_m","chainage_source","origin_id","branch","gis_chainage_m","sequence").forEach{k->old?.opt(k)?.let{p.put(k,it)}}
                 map.value(feature,"chainage").takeIf{it.isNotBlank()}?.let{p.put("gis_chainage_m",decimalItalian(it)?:error("Progressiva GIS non valida"))}

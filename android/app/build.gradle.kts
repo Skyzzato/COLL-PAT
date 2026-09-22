@@ -1,9 +1,15 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
+val localConfig = Properties().apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
+fun publicConfig(name: String) = providers.gradleProperty(name).orNull ?: localConfig.getProperty(name, "")
+fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "") + "\""
+require(publicConfig("SUPABASE_PUBLISHABLE_KEY").let { it.isBlank() || it.startsWith("sb_publishable_") }) { "Only SUPABASE_PUBLISHABLE_KEY may be embedded in the Android client" }
 layout.buildDirectory.set(file("build-pilot"))
 android {
     namespace = "it.pat.collettori"
@@ -12,11 +18,13 @@ android {
         applicationId = "it.pat.collettori.pilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.13"
+        versionCode = 14
+        versionName = "0.14"
+        buildConfigField("String", "SUPABASE_URL", quoted(publicConfig("SUPABASE_URL")))
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", quoted(publicConfig("SUPABASE_PUBLISHABLE_KEY")))
         buildConfigField("boolean", "DEMO", "false")
         buildConfigField("boolean", "DEV_ADMIN", "false")
-        buildConfigField("boolean", "PHOTO_UPLOAD_SIMULATED", "true")
+        buildConfigField("boolean", "PHOTO_UPLOAD_SIMULATED", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

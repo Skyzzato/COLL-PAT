@@ -33,7 +33,7 @@ def database():
     try:
         with psycopg.connect(dsn,autocommit=True) as c:
             c.execute("CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY); CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA public,auth TO authenticated; GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;")
-            for path in sorted((ROOT/'supabase/migrations').glob('20260922*.sql')):c.execute(path.read_text(encoding='utf-8'))
+            for path in sorted((ROOT/'supabase/migrations').glob('20260922000[12]*.sql')):c.execute(path.read_text(encoding='utf-8'))
         yield dsn
     finally:
         with psycopg.connect(url,autocommit=True) as root:root.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
@@ -41,6 +41,7 @@ def database():
 def rpc(dsn,user,function,**params):
     with psycopg.connect(dsn) as c:
         c.execute('SET LOCAL ROLE authenticated')
+        c.execute("SELECT set_config('request.headers', %s, true)", ('{"x-coll-pat-version":"0.14"}',))
         c.execute("SELECT set_config('request.jwt.claim.sub',%s,true)",(user,))
         names=list(params)
         q=sql.SQL('SELECT public.{}({})').format(sql.Identifier(function),sql.SQL(',').join(sql.SQL('{} => %s').format(sql.Identifier(k)) for k in names))

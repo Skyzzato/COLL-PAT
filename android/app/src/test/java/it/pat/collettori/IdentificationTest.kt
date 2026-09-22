@@ -13,10 +13,11 @@ class IdentificationTest {
         assertTrue(result.state.startsWith("Identificazione molto probabile"))
         assertEquals(listOf("a"),result.candidates)
     }
-    @Test fun accuracyChangesCandidateRadius(){
+    @Test fun configuredDistanceAndAccuracyAreIndependent(){
         val points=listOf(point("a",0.0002))
         assertTrue(GpsIdentification.identify(points,fix(4.0)).candidates.isEmpty())
-        assertEquals(listOf("a"),GpsIdentification.identify(points,fix(25.0)).candidates)
+        assertTrue(GpsIdentification.identify(points,fix(25.0)).candidates.isEmpty())
+        assertEquals(listOf("a"),GpsIdentification.identify(points,fix(4.0),FieldSettings(maxDistance=25.0)).candidates)
     }
     @Test fun ambiguityNeverAutoSelects(){
         val result=GpsIdentification.identify(listOf(point("a"),point("b",0.00002)),fix())

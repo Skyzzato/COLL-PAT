@@ -29,7 +29,7 @@ val externalKeys=listOf("surface","subsidence")
 val collectorTypes=listOf("CV","CZI","CR","BOE'","opere accessorie")
 
 fun collectorDefaults(id:String,code:String,description:String)=JSONObject().put("id",id).put("code",code).put("description",description)
-    .put("type","CV").put("visits_h1",2).put("visits_h2",2).put("hours_km_visit",2.0)
+    .put("display_color",DEFAULT_COLLECTOR_COLOR).put("type","CV").put("visits_h1",2).put("visits_h2",2).put("hours_km_visit",2.0)
     .put("length_m",JSONObject.NULL).put("length_source","UNAVAILABLE").put("length_complete",false).put("archived",false)
 fun validateCollector(c:JSONObject){
     java.util.UUID.fromString(c.getString("id"))

@@ -1,0 +1,4 @@
+# Copy to local.properties (ignored by Git). Public client configuration only.
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_REPLACE_ME
+# sdk.dir=C\:\\Users\\YOUR_USER\\AppData\\Local\\Android\\Sdk

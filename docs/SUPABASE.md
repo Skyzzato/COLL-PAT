@@ -1,35 +1,34 @@
-# Supabase diretto — COLL-PAT v0.13
+# Supabase — COLL-PAT v0.14
 
-## Stato di questa consegna
+Android usa direttamente Supabase Auth, RPC HTTPS e Storage. FastAPI rimane per compatibilità storica. In questa consegna le migrazioni sono applicate solo a database locali isolati di test; nessuna modifica, registrazione o reset remoto è stato effettuato.
 
-Due migrazioni **preparate, applicate e collaudate solo su PostgreSQL/PostGIS locale isolato**. **Non applicate/verificate sul remoto**. La connessione configurata verso il Session pooler del progetto precedente ha restituito timeout su tutti gli indirizzi risolti (porta 5432). Nessuna sessione Supabase Auth o chiave pubblica di progetto era configurata nell'app. Non è stato simulato alcun successo remoto.
+## Configurazione del progetto
 
-Reset iniziale remoto/locale collegato: **non eseguito**, perché l'ambiente di sviluppo e i permessi effettivi non sono stati verificabili. La bozza v0.12 dell'emulatore è stata conservata e verificata byte per byte dopo upgrade. Backup privati ed evidenze stanno in `local-output/verification/v0.13/`, escluso da Git.
+1. Su un progetto nuovo applicare le migrazioni `202609220001_coll_pat_v013.sql` e `202609220002_coll_pat_spatial.sql` una sola volta. Su un progetto già v0.13 non ripeterle.
+2. Applicare nell’ordine `202609220003_coll_pat_v014.sql` e `202609220004_coll_pat_photos.sql`. Entrambe le nuove migrazioni sono ripetibili. Non cancellano l’archivio. La configurazione iniziale è latest/minimum **0.14**; una configurazione successivamente modificata non viene sovrascritta dalla ripetizione.
+3. Abilitare il provider email/password di Supabase Auth, conferma email e consegna email secondo la configurazione del progetto. La schermata Android chiama il servizio reale di registrazione. Il recupero password resta disabilitato nell’app.
+4. Dopo la conferma dell’identità, aggiungere gli operatori a `coll_pat.memberships` tramite un responsabile: [bootstrap-v014.sql.example](../supabase/bootstrap-v014.sql.example). La registrazione non assegna automaticamente permessi né ruoli amministrativi. L’UUID del progetto applicativo è distinto dal riferimento del progetto Supabase.
+5. Copiare `android/local.properties.example` in `android/local.properties`, impostando **SUPABASE_URL** e **SUPABASE_PUBLISHABLE_KEY**. Sono supportate anche proprietà Gradle e configurazione pubblica nella schermata iniziale. La chiave deve iniziare con `sb_publishable_`. Non utilizzare secret, service_role o password database nel client.
+6. Verificare che Storage contenga il bucket privato `coll-pat-photos`, limite 6 MiB e MIME JPEG, creato dalla migrazione 004. Le foto vengono ridimensionate al massimo a 2400 pixel prima dell’upload; gli originali locali restano conservati.
 
-## Installazione del protocollo
+## Permessi
 
-1. Come proprietario database, esaminare ed eseguire in ordine `supabase/migrations/202609220001_coll_pat_v013.sql` e `202609220002_coll_pat_spatial.sql`. Non rilanciare la prima su uno schema già creato; non cancellare lo schema per forzarla. La migrazione storica 202609160001 non è stata modificata. Su un progetto nuovo le due v0.13 sono autonome da FastAPI, richiedono Auth Supabase e PostGIS.
-2. Creare/invitare l'utente con **Supabase Auth** secondo le policy normali. Non usare admin/admin come credenziale remota. Eseguire privatamente `supabase/bootstrap-v013.sql.example`, sostituendo l'UUID dell'utente verificato. Il progetto applicativo sintetico proposto è `00000000-0000-4000-8000-000000000013`.
-3. Gli account legacy `collettori.users` non sono Auth: collegare esplicitamente gli UUID in `coll_pat.legacy_identity_links` dopo verifica dell'identità. Nessuna copia di password/hash. Per l'anagrafica legacy utilizzare il dry run `scripts/migrate_legacy_catalog.py --area ... --project ... --auth-admin ...`, quindi `--execute` dopo la verifica del rapporto. Lo script usa `COLL_PAT_ADMIN_DSN` solo nell'ambiente privato.
-4. In Android → Altro → Account: URL HTTPS Supabase, chiave **publishable/anon**, UUID progetto, email/password Auth. La sessione viene cifrata con Keystore, con refresh token ruotato correttamente. Mai chiavi secret/service_role o DSN PostgreSQL nell'app.
-5. Admin dashboard locale (solo demo): admin/admin. Il server controlla comunque il ruolo admin. Pubblicare i dati sintetici locali oppure importare il ZIP; attendere ricevuta prima di considerarli remoti. Accedere prima di iniziare ispezioni destinate al server.
+RLS è attiva su tutte le tabelle di `coll_pat`, senza grant diretti di SELECT/DML ai client. Le RPC SECURITY DEFINER hanno `search_path` vuoto, nomi qualificati e controllo di `auth.uid()`, progetto e ruolo. Il catalogo è modificabile soltanto dagli amministratori; le bozze sono condivise fra i membri del progetto.
 
-## Accessi e protocollo
+`coll_pat_version` è l’unica lettura di configurazione disponibile prima del login: non espone dati operativi. `app_config` non è scrivibile dai client. Le altre RPC richiedono l’header `X-Coll-Pat-Version`; una versione precedente al minimo viene rifiutata anche lato server.
 
-`coll_pat` è privato, non va aggiunto agli schemi Data API esposti. RLS attiva su ogni tabella, niente DML/SELECT client diretti. Pubbliche soltanto RPC `coll_pat_status`, `coll_pat_catalog`, `coll_pat_apply`, `coll_pat_history`, `coll_pat_backup`, `coll_pat_reset`, eseguibili da authenticated e protette internamente con auth.uid()/membership. Funzioni SECURITY DEFINER con search_path vuoto, oggetti qualificati e permessi minimi.
+Storage autorizza lettura ai membri del progetto e inserimento solo all’autore del metadato prenotato. Il nome è `{project}/{inspection}/{photo}.jpg`. Non esistono policy COLL-PAT per overwrite/delete client. Il retry usa lo stesso percorso e la ricevuta controlla l’esistenza dell’oggetto; la rimozione dalla bozza archivia il metadato, senza cancellare il file.
 
-Catalogo paginato 200 righe con revisione coerente; se cambia durante lo scaricamento occorre ripetere il download. Operazioni atomiche, UUID idempotente e confronto integrale JSONB. Autore dell'ispezione deve corrispondere ad Auth. GPS ricalcolato sul server usando gps-1, inclusi accuracy, età, mock, permesso e candidati ambigui. Campi interni regolari nelle verifiche esterne sono rifiutati.
+## Concorrenza e offline
 
-Le vecchie API FastAPI non sono usate dall'APK v0.13. La nuova migrazione revoca al ruolo legacy le scritture nelle tabelle di ispezione; client precedenti non possono aggirare la generazione. Non esporre vecchie tabelle utenti/hash/sessioni. Conservare backend e database storico in sola lettura per audit/migrazione.
+`coll_pat_save_inspection` confronta `expected_revision` sotto lock e conserva ricevute idempotenti. La bozza ha stato `BOZZA`; gli stati finali esistenti `COMPLETO` e `IMPEDITO` equivalgono alla submission. Creatore, modificatore e mittente vengono determinati dal server. Un secondo utente non può inventare evidenze GPS attribuite al primo.
 
-## Pulizia iniziale e reset ordinario
+In caso di conflitto l’app conserva la propria copia, interrompe gli invii dipendenti e propone dalla scheda **Conserva copia locale e apri versione server**. Le foto locali nuove restano disponibili. Non viene eseguito un merge automatico dei campi.
 
-`scripts/initial_inspection_cleanup.py` è una procedura privata distinta dalle migrazioni, dry run predefinito. Richiede progetto development, area legacy esplicitamente sintetica, amministratore Auth esistente, nessuna nuova ispezione nel progetto v0.13 e percorso backup privato. L'esecuzione richiede `--execute --confirmation AZZERA`; registra un marcatore una tantum, cancella solo ispezioni di quell'area e relative dipendenze, preserva anagrafica/account/configurazione e incrementa generation.
+Le query operative escludono i collettori archiviati; il download riceve separatamente i relativi marcatori per aggiornare le cache. Un aggiornamento vecchio non può riattivarli. Lo storico conserva i riferimenti originali. L’RPC di riepilogo invia soltanto ultime ispezioni valide e bozze, con cursore; cronologia ed export richiedono esplicitamente i dati più estesi.
 
-Dashboard: conteggio/ambito, digitazione AZZERA, backup privato locale della risposta server e archivio locale, reset immediato autorizzato. Nessuna outbox distruttiva. Se il backup diventa obsoleto per un invio concorrente, il server rifiuta e richiede un nuovo backup. Vecchie code sono sospese come RESET_OBSOLETE; il recupero deve essere deciso esplicitamente, senza cambiare generation dei vecchi payload.
+## Validazione
 
-## Verifica
+`test_v014_sql.py` verifica transazioni e ruoli PostgreSQL reali con due operatori; le tabelle Storage del test sono un ambiente per verificare le policy, non un servizio Storage remoto. I test Android Auth verificano richieste, sessione cifrata e refresh con risposte HTTP controllate. Per completare il collaudo sul progetto reale servono due account abilitati e la configurazione pubblica sopra indicata.
 
-`backend/tests/test_v013_sql.py` crea un database temporaneo esclusivamente su localhost, applica le migrazioni e usa il ruolo authenticated con claim di test. Verifica autorizzazioni e transazioni reali, **non** un login Auth Supabase remoto. Variabile: COLL_PAT_SQL_TEST_URL. Test di integrazione remota Auth→RPC, secondo telefono, policy nel progetto installato e reset iniziale rimangono da eseguire.
-
-Fonti: [funzioni Supabase](https://supabase.com/docs/guides/database/functions), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [chiavi API](https://supabase.com/docs/guides/getting-started/api-keys). Configurazione precedente archiviata in [history/v0.12/SUPABASE.md](history/v0.12/SUPABASE.md).
+Riferimenti: [Auth email/password](https://supabase.com/docs/guides/auth/passwords), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [Storage e policy](https://supabase.com/docs/guides/storage/security/access-control), [upload standard](https://supabase.com/docs/guides/storage/uploads/standard-uploads). Documentazione precedente: [v0.13](history/v0.13/SUPABASE.md).

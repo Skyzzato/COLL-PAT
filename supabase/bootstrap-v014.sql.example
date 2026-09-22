@@ -1,0 +1,11 @@
+-- Run privately as project owner after creating/confirming the account in Supabase Auth.
+-- No administrative key belongs in the APK. Replace only the UUID placeholders.
+BEGIN;
+INSERT INTO coll_pat.projects(id,name,development)
+VALUES ('00000000-0000-4000-8000-000000000013','COLL-PAT',false)
+ON CONFLICT(id) DO NOTHING;
+INSERT INTO coll_pat.memberships(project_id,user_id,role)
+VALUES ('00000000-0000-4000-8000-000000000013','REPLACE_WITH_CONFIRMED_AUTH_USER_UUID','inspector')
+ON CONFLICT(project_id,user_id) DO UPDATE SET role=excluded.role;
+-- Assign 'admin' instead of 'inspector' only to a verified project administrator.
+COMMIT;

@@ -1,17 +1,17 @@
-# Architettura COLL-PAT v0.13
+# Architettura COLL-PAT v0.14
 
-La UI Compose condivide catalogo, filtri e navigazione. MapLibre è inizializzato in Application **prima** del client HTTP; la mappa resta montata cambiando scheda, le sorgenti GeoJSON sono aggiornate senza ricaricare tutto lo stile. Camera salvabile e liste con stato conservato. Splash applicativo asincrono di almeno 3 secondi al primo avvio del processo, con preparazione locale parallela e timeout recuperabile; nessuna rete necessaria.
+Compose → Repository → Room/WorkManager → Supabase Auth/RPC/Storage, con cartografia MapLibre. Si mantengono importazione shapefile nativa, catalogo JSONB/PostGIS e distinzione fra archivio demo e account server.
 
-Room v2 (`pilot-v1.db`) è l'archivio di lavoro: schede, anagrafica, importazioni, audit, preferenze e outbox. Migrazione 1→2 aggiunge tabelle/colonne; conserva i body e sospende le code precedenti. Snapshot del catalogo all'inizio della scheda per evitare di cambiare il punto di riferimento delle evidenze.
+- `InspectionStatus.kt`: unica logica di periodicità, ultima ispezione valida/anomalia e palette; indice costruito una volta per aggiornamento dei dati, mai una richiesta server per pozzetto.
+- `OfflineMap.kt`: sorgenti GeoJSON memorizzate, aggiornate soltanto se cambiano; soglia di zoom applicata ai livelli nativi. Lo zoom non ricompone il catalogo; i tronchi non hanno una soglia minima.
+- `SettingsPanel.kt`: sezioni espandibili e preferenze persistenti in Room. Login e registrazione usano la rete autentica; password non persistite, sessione cifrata con Keystore.
+- `Repository.kt`: modifiche locali serializzate, salvataggio atomico. Le bozze modificate sono durevoli con stato in attesa; il worker congela il payload in outbox prima dell’invio. Un invio definitivo è accodato nella stessa transazione della scheda, anche se il caricamento della bozza precedente è in corso.
+- Revisione server e contatore modifiche locali sono distinti: una ricevuta di una versione precedente non dichiara sincronizzate le modifiche locali successive. Il server usa un confronto condizionale di revisione e ricevute immutabili.
+- `PhotoRepository.kt`: file originali privati, UUID persistenti, metadati prenotati con la scheda, upload JPEG sullo stesso percorso e download autenticato su richiesta. Nessuna URL pubblica inventata.
+- `InspectionCsv.kt`: righe concluse del semestre Europe/Rome, escaping CSV e salvataggio tramite SAF. Con rete aggiorna il semestre dal server, senza scaricare fotografie.
 
-Autosalvataggi ordinati in scope applicativo; uscita e registrazione attendono le scritture precedenti. Un mutex serializza le mutazioni e la transazione salva scheda+outbox prima del feedback. Le scritture tardive non riportano una scheda registrata allo stato bozza. Doppio tap idempotente sulla stessa scheda, UUID nuovo per ogni nuovo sopralluogo.
+Room 3 usa `(owner,id)` per le visite: due account possono conservare copie distinte della stessa bozza, incluso lavoro non inviato. Le migrazioni 1→2→3 preservano i dati. Gli invii del vecchio protocollo sono conservati per recupero esplicito.
 
-WorkManager: vincolo rete, lavoro univoco e backoff; recupera gli `IN_CORSO`. Una coda è legata a URL, utente Auth, progetto e generazione. Auth scaduta sospende; payload invalidi/conflitti diventano terminali e non vengono riaccodati automaticamente. Un errore dell'anagrafica blocca le schede dipendenti. Creazione precede annullamento; nessuna cancellazione locale della creazione già accodata.
+La policy di versione viene verificata all’avvio e prima della sincronizzazione. Una policy già nota che blocca la versione viene applicata anche offline; una prima verifica senza rete non elimina l’accesso ai dati locali. Il server controlla indipendentemente la versione nelle RPC.
 
-RPC `coll_pat_apply`: identifica l'autore dalla sessione Auth, verifica ruolo/progetto, blocca la riga progetto, confronta generazione e contenuto dell'operazione, scrive e rilascia ricevuta atomicamente. Retry con risposta persa restituisce la stessa ricevuta. Tutte le tabelle private hanno RLS attiva e nessun DML client; funzioni SECURITY DEFINER con `search_path=''`, riferimenti qualificati ed EXECUTE solo a authenticated. Nessuna API per autoassegnarsi ruoli.
-
-Reset e invii condividono il blocco della riga progetto. Backup con token legato a revisione ispezioni, autore, generazione e scadenza; se arrivano nuove schede occorre un nuovo backup. Il reset elimina solo schede/dipendenze del progetto, incrementa la generazione e conserva log minimo e anagrafica. Al ritorno online le vecchie operazioni sono sospese, mai rietichettate.
-
-Importazione grande: chunk privati, idempotenti e ordinati; elenco esplicito delle ricevute nella pubblicazione finale. La validazione e la scrittura dell'intero catalogo avvengono in un'unica transazione. Nessun catalogo parzialmente pubblico. La controparte locale salva tutti gli oggetti e la coda in una transazione Room.
-
-Sessioni cifrate con Android Keystore. La chiave client è pubblica, mai service_role/secret o password PostgreSQL. Le credenziali legacy restano private e richiedono un collegamento Auth esplicito; l'identità demo non viene automaticamente trasformata in autore remoto. Il backend Python resta storico, non obbligatorio.
+[Architettura v0.13](history/v0.13/ARCHITECTURE.md) · [GIS](GIS.md) · [Collaudo](VALIDATION-v0.14.md).

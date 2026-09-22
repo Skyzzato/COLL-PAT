@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.14 — COLL-PAT (pre-release)
+
+- Periodicità centralizzata, quattro stati, filtri aggiornati e zoom/simbologia configurabili.
+- Impostazioni a sezioni, card navigabili, colori collettori e archiviazione persistente.
+- Login/registrazione, sessione persistente, bozze condivise con revisione e autori server.
+- Storage foto privato con UUID stabili, GPS con soglie separate e qualità storica.
+- CSV semestrale tramite SAF, controllo versione server/cache, terzo collettore demo Via Gilli.
+- Migrazioni SQL additive e Room 3 per isolamento degli account; test SQL e Android.
+- Collaudo remoto e sul campo ancora da eseguire con la configurazione del progetto.
+
 ## v0.13 — COLL-PAT (prerelease)
 
 - Rinomina prodotto e repository, versione 13, splash asincrono con logo originale.
