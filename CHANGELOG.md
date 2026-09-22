@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.15 — importazione guidata e acquisizione GPS (pre-release)
+
+- Incluse le correzioni funzionali v0.14: demo idempotente Trento/Lavis/Gilli, trimestre civile, sette simboli e accesso admin all’importazione.
+- Codifica automatica per layer: CPG, intestazione DBF, prova UTF-8 rigorosa o proposta Windows-1252. Anteprima degli attributi e opzioni guidate, senza sostituzioni silenziose.
+- Identificativi verificati sull’intero layer, conteggi/esempi dei vuoti e duplicati; nessun FID automatico o UUID sostitutivo per chiavi assenti.
+- GPS: precontrollo, cinque secondi di misure nuove, media sferica, accuracy massima conservativa e dispersione separata. Nessuna deroga oltre accuratezza; eccezione motivata per mancata corrispondenza.
+- Salvataggi durevoli di bozza/ispezione con messaggio locale/server, foto separate e ritorno alla pagina precedente dopo due secondi. Outbox atomica per Salva bozza.
+- Migrazione SQL 005 additiva, dati GPS nel JSON esistente e Room 3 invariata. Versione 0.15, versionCode 15, stessa identità/firma.
+
+
 ## v0.14 — COLL-PAT (pre-release)
 
 - Periodicità centralizzata, quattro stati, filtri aggiornati e zoom/simbologia configurabili.

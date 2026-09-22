@@ -18,8 +18,8 @@ android {
         applicationId = "it.pat.collettori.pilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.14"
+        versionCode = 15
+        versionName = "0.15"
         buildConfigField("String", "SUPABASE_URL", quoted(publicConfig("SUPABASE_URL")))
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", quoted(publicConfig("SUPABASE_PUBLISHABLE_KEY")))
         buildConfigField("boolean", "DEMO", "false")

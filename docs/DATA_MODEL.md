@@ -1,4 +1,4 @@
-# Modello dati COLL-PAT v0.14
+# Modello dati COLL-PAT v0.15
 
 ## PostgreSQL
 
@@ -15,3 +15,5 @@ Indici: ultima ispezione per progetto/pozzetto/data, stato e aggiornamento, appa
 Room 3 mantiene `visits`, `outbox`, `packages`, `settings`, `catalog`, `audit`, `imports`. La chiave visita e l’unicità delle revisioni outbox includono ora l’account. Preferenze mappa/GPS, metadati foto, policy versione e copie originali sono in `settings` e nello spazio privato esistente.
 
 La migrazione 2→3 copia integralmente le schede prima di sostituire la tabella, ricrea gli indici e sospende gli invii v0.13 non ancora trasmessi. Non elimina fotografie o storico. [Schema precedente](history/v0.13/DATA_MODEL.md).
+
+La v0.15 estende il JSON degli eventi esistente: `method`, `sample_count`, `duration_ms`, `sample_span_ms`, `acquisition_started_at/ended_at`, `started/ended_elapsed_ns`, `last_sample_elapsed_ns`, `dispersion_m`, `match_outcome` e `exception_reason`. Accuracy/coordinate, UUID, identità e `applied_limits` erano già presenti. Nessuna colonna equivalente duplicata e nessuna nuova migrazione Room. La migrazione SQL 005 estende la validazione senza riscrivere i record storici.

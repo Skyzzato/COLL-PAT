@@ -66,16 +66,16 @@ class StartupWorkflowTest {
         val rule=Rule.parse(JSONObject(context.assets.open("gps-rule.json").bufferedReader().use{it.readText()}))
         val event=LocationCapture(context).collect(body,rule)
         event.put("local_evaluation",GpsRule.evaluate(event,points.first(),points,rule))
-        repo.appendEvent(visit.id,event)
+        try{repo.appendEvent(visit.id,event);fail("Invalid GPS event persisted")}catch(_:IllegalArgumentException){}
         body.getJSONObject("sheet").put("impediment_reason","GPS non disponibile nel collaudo")
         repo.complete(visit.id,body,"IMPEDITO")
         val reopened=Repository(context)
         try {
             val saved=reopened.dao.visit(visit.id,visit.owner)!!
             assertEquals("IMPEDITO",saved.operational)
-            assertEquals("IN_ATTESA",saved.sync)
+            assertEquals("SALVATO_LOCALMENTE",saved.sync)
             assertEquals(1,PhotoRepository(reopened).list(saved).size)
-            assertEquals(1,reopened.dao.pendingVisit(visit.id,visit.owner).size)
+            assertEquals(0,reopened.dao.pendingVisit(visit.id,visit.owner).size)
         } finally {reopened.db.close()}
         Unit
     }

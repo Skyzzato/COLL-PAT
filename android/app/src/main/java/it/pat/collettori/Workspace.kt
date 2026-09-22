@@ -103,6 +103,8 @@ import java.time.format.DateTimeFormatter
     Scaffold(bottomBar={NavigationBar{listOf("Mappa","Collettori","Pozzetti","Ispezioni","Impostazioni").forEach{title->NavigationBarItem(selected=tab==title,onClick={tab=title},icon={Icon(painterResource(when(title){"Mappa"->R.drawable.ic_map;"Collettori"->R.drawable.ic_pipe;"Pozzetti"->R.drawable.ic_pin;"Ispezioni"->R.drawable.ic_history;else->R.drawable.ic_settings}),contentDescription=title,modifier=Modifier.size(24.dp))},label={Text(title,maxLines=1)})}}}){padding->
         Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding()){
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=6.dp),horizontalArrangement=Arrangement.SpaceBetween){Text(AppSpec.NAME,style=MaterialTheme.typography.titleLarge);Text("v${AppSpec.version}",style=MaterialTheme.typography.labelMedium)}
+            if(account==DemoMode.owner)Text("Demo locale · dati sintetici",Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.labelSmall)
+            else if(BuildConfig.DEMO&&activeCollectors.isEmpty())Text("Nessun collettore caricato per questo account. Per i dati di prova: Impostazioni → Account → Apri demo offline.",Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
             if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
             if(activeCapture!=null)TextButton(onClick={activeCapture?.cancel()}){Text("Interrompi rilevazione GPS")}
             if(message.isNotBlank())Row(Modifier.padding(horizontal=12.dp)){Text(message,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall);TextButton(onClick={message=""}){Text("Chiudi")}}
@@ -149,7 +151,7 @@ import java.time.format.DateTimeFormatter
     val editor=visits.firstOrNull{it.id==editorId}
     if(editor!=null)Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)){
         val editorPoint=points.find{it.getString("id")==editor.manholeId}
-        InspectionEditor(repo,editor,editorPoint,editorPoint?.let{collectorNames(it,collectors)}?:"Collettore storico",busy,message,{message=it},{editorId=null},{locate(editor.id)},activeCapture!=null,{activeCapture?.cancel()})
+        key(editor.id){InspectionEditor(repo,editor,editorPoint,editorPoint?.let{collectorNames(it,collectors)}?:"Collettore storico",busy,message,{message=it},{editorId=null})}
     }
     }
     if(selector)ModalBottomSheet(onDismissRequest={selector=false},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
@@ -236,7 +238,7 @@ fun modelLabel(model:String)=when(model){"ORDINARY"->"Ordinario";"ASPHALT_EXTERN
                     if(p!=null)IconButton(onClick={focus(p)}){Icon(painterResource(R.drawable.ic_target),"Centra su mappa")}
                     if(!isCancelled(v))IconButton(onClick={target=v}){Icon(painterResource(R.drawable.ic_trash),"Annulla ispezione")}
                 }
-                if(gpsQuality(lastEvidence(b))!="RELIABLE")Text(if(gpsQuality(lastEvidence(b))=="IMPRECISE")"GPS impreciso" else "GPS non affidabile",color=MaterialTheme.colorScheme.error)
+                if(motivatedGpsException(lastEvidence(b)))Text("Corrispondenza non verificata — eccezione motivata",color=MaterialTheme.colorScheme.error) else if(gpsQuality(lastEvidence(b))!="RELIABLE")Text(if(gpsQuality(lastEvidence(b))=="IMPRECISE")"GPS impreciso" else "GPS non affidabile",color=MaterialTheme.colorScheme.error)
                 if(p!=null)TextButton(onClick={newInspection(p)},modifier=Modifier.align(Alignment.End)){Text("Nuova ispezione",color=ConfirmedGreen)}
                 }}
             }

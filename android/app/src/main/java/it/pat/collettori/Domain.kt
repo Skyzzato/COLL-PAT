@@ -24,6 +24,11 @@ fun isCancelled(v:Visit)=JSONObject(v.body).has("cancelled")
 fun periodic(v:Visit)=!isCancelled(v)&&v.operational=="COMPLETO"&&JSONObject(v.body).optBoolean("periodic_control")
 fun visitDay(v:Visit)=Instant.parse(JSONObject(v.body).optString("completed_at",JSONObject(v.body).getString("started_at"))).atZone(ZoneId.of("Europe/Rome")).toLocalDate()
 fun semester(instant:Instant):String {val d=instant.atZone(ZoneId.of("Europe/Rome"));return "${d.year}-S${if(d.monthValue<=6)1 else 2}"}
+fun mayManageCatalog(session:JSONObject?,localAdminEnabled:Boolean):Boolean = when {
+    session==null->false
+    session.optString("base")==DemoMode.base->localAdminEnabled
+    else->session.has("access_token")&&session.optInt("protocol")==AppSpec.PROTOCOL&&session.optString("role")=="admin"
+}
 fun hasAnomaly(body:JSONObject)=body.getJSONObject("sheet").let{s->s.optString("anomaly_note").isNotBlank()||(Repository.observationKeys+externalKeys).any{s.optString(it)=="ANOMALO"}||s.optBoolean("raise_needed")||s.optBoolean("road_repair_needed")}
 val externalKeys=listOf("surface","subsidence")
 val collectorTypes=listOf("CV","CZI","CR","BOE'","opere accessorie")
@@ -74,6 +79,8 @@ fun validateInspection(body:JSONObject,status:String){
         else require(!s.optBoolean("opened")&&s.optString("no_open_reason").isNotBlank()&&listOf("deposits","flow","walls","damage").all{s.optString(it)=="NON_OSSERVABILE"}){"I controlli interni non sono osservabili"}
         require(!hasAnomaly(body)||s.optString("anomaly_note").isNotBlank()){"Descrivere l'anomalia o la necessità di intervento"}
     }
-    require(activeEvents(body).isNotEmpty()){"Rilevare la posizione: anche un tentativo fallito viene conservato"}
+    // An impediment documents the failed visit, without inventing a failed position event.
+    if(status=="IMPEDITO"&&activeEvents(body).isEmpty())return
+    require(activeEvents(body).isNotEmpty()){"Rilevare una posizione valida prima di completare l’ispezione"}
     if(lastEvidence(body)?.optJSONObject("local_evaluation")?.optString("state")!="COMPATIBILE")require(s.optString("exception_reason").isNotBlank()){"Motivare l'eccezione GPS"}
 }

@@ -10,14 +10,14 @@ import org.json.JSONObject
 import kotlin.math.*
 
 data class ShapeFeature(val fields:Map<String,String>,val geometry:JSONObject)
-data class ShapeLayer(val name:String,val kind:String,val fields:List<String>,val features:List<ShapeFeature>,val crs:Int,val encoding:String)
+data class ShapeLayer(val name:String,val kind:String,val fields:List<String>,val features:List<ShapeFeature>,val crs:Int,val encoding:String,val encodingNote:String="",val encodingChoice:String="AUTO")
 data class ShapeArchive(val layers:List<ShapeLayer>,val hash:String)
 
 /** Bounded native reader for ESRI point/polyline (including Z/M). No desktop GIS dependency. */
 object Shapefile {
     const val MAX_BYTES=32*1024*1024
     const val MAX_FEATURES=10000
-    fun read(input:InputStream,explicitCrs:Int?=null,explicitEncoding:String?=null):ShapeArchive{
+    fun read(input:InputStream,explicitCrs:Int?=null,explicitEncoding:String?=null,layerEncodings:Map<String,String> = emptyMap()):ShapeArchive{
         val entries=linkedMapOf<String,ByteArray>();var total=0
         ZipInputStream(input).use{zip->while(true){val e=zip.nextEntry?:break
             require(entries.size<80){"ZIP: troppi componenti (massimo 80)"}
@@ -36,17 +36,39 @@ object Shapefile {
             val stem=path.removeSuffix(".shp");val shp=entries[path]!!;val shx=entries["$stem.shx"]?:error("$stem: manca .shx");val dbf=entries["$stem.dbf"]?:error("$stem: manca .dbf")
             val crs=explicitCrs?:entries["$stem.prj"]?.let{detectCrs(String(it,Charsets.UTF_8))}?:error("$stem: CRS assente; indicare EPSG esplicito")
             require(crs in listOf(4326,3857,32632,32633,25832,25833)){"EPSG:$crs non supportato (4326, 3857, 32632/33, 25832/33)"}
-            val encoding=explicitEncoding?:entries["$stem.cpg"]?.let{String(it,Charsets.US_ASCII).trim().trim('\uFEFF')}?:error("$stem: manca .cpg; specificare esplicitamente la codifica")
-            val charset=when(encoding.uppercase()){ "65001","UTF8","UTF-8"->Charsets.UTF_8;"1252","WINDOWS-1252"->Charset.forName("windows-1252");"ISO-8859-1","LATIN1"->Charsets.ISO_8859_1;else->error("Codifica $encoding non supportata")}
-            val (fields,rows)=dbf(dbf,charset);val geometry=shp(shp,shx,crs)
+            val choice=layerEncodings[stem]?:explicitEncoding?:"AUTO"
+            val declared=entries["$stem.cpg"]?.let{String(it,Charsets.UTF_8).trim().trim('\uFEFF')}
+            val (charset,note)=encoding(dbf,declared,choice)
+            val (fields,rows)=try{dbf(dbf,charset)}catch(e:java.nio.charset.CharacterCodingException){throw IllegalArgumentException("$stem: caratteri non decodificabili con ${charset.name()}. Cambia codifica in Opzioni avanzate; nessun carattere è stato sostituito.",e)}
+            val geometry=shp(shp,shx,crs)
             require(rows.size==geometry.size){"$stem: cardinalità SHP/DBF incoerente"}
             val features=rows.mapIndexedNotNull{i,row->row?.let{ShapeFeature(it,geometry[i])}}
             require(features.isNotEmpty()){"$stem: nessun oggetto attivo"}
             val kinds=features.map{it.geometry.getString("type")}.toSet();require(kinds.all{it=="Point"}||kinds.all{it in listOf("LineString","MultiLineString")}){"Geometrie miste nello stesso layer"}
-            ShapeLayer(stem,if(kinds==setOf("Point"))"point" else "segment",fields,features,crs,charset.name())
+            ShapeLayer(stem,if(kinds==setOf("Point"))"point" else "segment",fields,features,crs,charset.name(),note,choice)
         }
         require(layers.sumOf{it.features.size}<=MAX_FEATURES){"Massimo 10000 oggetti per importazione atomica"}
         return ShapeArchive(layers,digest.digest().joinToString(""){"%02x".format(it)})
+    }
+    private fun charset(name:String?):Charset?=when(name?.uppercase()){
+        "65001","UTF8","UTF-8"->Charsets.UTF_8
+        "1252","WINDOWS-1252","CP1252"->Charset.forName("windows-1252")
+        "ISO-8859-1","LATIN1","LATIN-1"->Charsets.ISO_8859_1
+        else->null
+    }
+    private fun encoding(bytes:ByteArray,cpg:String?,choice:String):Pair<Charset,String>{
+        if(choice!="AUTO")return (charset(choice)?:error("Codifica non supportata")) to "Scelta manuale per questo layer"
+        charset(cpg)?.let{return it to "Dichiarata nel file .cpg"}
+        require(bytes.size>=33){"DBF troncato"}
+        val prefix=if(cpg!=null)"Dichiarazione .cpg non riconosciuta. " else ""
+        // LDID 0x03 is Windows-1252; GDAL interprets legacy 0x57 as Latin-1, with caveats.
+        if((bytes[29].toInt() and 255)==0x03)return Charset.forName("windows-1252") to (prefix+"Indicata nell'intestazione DBF (Windows ANSI)")
+        if((bytes[29].toInt() and 255)==0x57)return Charsets.ISO_8859_1 to (prefix+"Indicazione DBF legacy LDID/87 interpretata come Latin-1: verifica l’anteprima")
+        val utf=try{dbf(bytes,Charsets.UTF_8)}catch(_:java.nio.charset.CharacterCodingException){null}
+        return if(utf!=null){
+            val ascii=utf.second.filterNotNull().all{row->row.values.all{v->v.all{it.code<128}}}
+            Charsets.UTF_8 to (prefix+if(ascii)"Testi ASCII: anteprima equivalente nelle codifiche proposte" else "Testi compatibili con UTF-8; proposta da verificare nell'anteprima")
+        }else Charset.forName("windows-1252") to (prefix+"UTF-8 non valido; proposta Windows-1252 per dati legacy, da verificare nell'anteprima")
     }
     fun detectCrs(wkt:String):Int{
         val epsg=Regex("(?:AUTHORITY|ID)\\s*\\[\\s*\"EPSG\"\\s*,\\s*\"?(\\d+)\"?\\s*]",RegexOption.IGNORE_CASE).findAll(wkt).map{it.groupValues[1].toInt()}.toList().lastOrNull()

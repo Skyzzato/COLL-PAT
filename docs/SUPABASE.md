@@ -1,12 +1,12 @@
-# Supabase — COLL-PAT v0.14
+# Supabase — COLL-PAT v0.15
 
-Android usa direttamente Supabase Auth, RPC HTTPS e Storage. FastAPI rimane per compatibilità storica. In questa consegna le migrazioni sono applicate solo a database locali isolati di test; nessuna modifica, registrazione o reset remoto è stato effettuato.
+Android usa direttamente Supabase Auth, RPC HTTPS e Storage. FastAPI rimane per compatibilità storica. Lo stato delle migrazioni locali e remote effettivamente applicate è riportato in [VALIDATION-v0.15](VALIDATION-v0.15.md).
 
 ## Configurazione del progetto
 
 1. Su un progetto nuovo applicare le migrazioni `202609220001_coll_pat_v013.sql` e `202609220002_coll_pat_spatial.sql` una sola volta. Su un progetto già v0.13 non ripeterle.
 2. Applicare nell’ordine `202609220003_coll_pat_v014.sql` e `202609220004_coll_pat_photos.sql`. Entrambe le nuove migrazioni sono ripetibili. Non cancellano l’archivio. La configurazione iniziale è latest/minimum **0.14**; una configurazione successivamente modificata non viene sovrascritta dalla ripetizione.
-3. Abilitare il provider email/password di Supabase Auth, conferma email e consegna email secondo la configurazione del progetto. La schermata Android chiama il servizio reale di registrazione. Il recupero password resta disabilitato nell’app.
+3. Applicare `202609220005_coll_pat_v015.sql` dopo le precedenti: aggiorna il contratto GPS, senza modificare latest/minimum. Aggiornare solo latest a 0.15 dopo la pubblicazione dell’APK; minimo vigente 0.14. Abilitare il provider email/password di Supabase Auth, conferma email e consegna email secondo la configurazione del progetto. La schermata Android chiama il servizio reale di registrazione. Il recupero password resta disabilitato nell’app.
 4. Dopo la conferma dell’identità, aggiungere gli operatori a `coll_pat.memberships` tramite un responsabile: [bootstrap-v014.sql.example](../supabase/bootstrap-v014.sql.example). La registrazione non assegna automaticamente permessi né ruoli amministrativi. L’UUID del progetto applicativo è distinto dal riferimento del progetto Supabase.
 5. Copiare `android/local.properties.example` in `android/local.properties`, impostando **SUPABASE_URL** e **SUPABASE_PUBLISHABLE_KEY**. Sono supportate anche proprietà Gradle e configurazione pubblica nella schermata iniziale. La chiave deve iniziare con `sb_publishable_`. Non utilizzare secret, service_role o password database nel client.
 6. Verificare che Storage contenga il bucket privato `coll-pat-photos`, limite 6 MiB e MIME JPEG, creato dalla migrazione 004. Le foto vengono ridimensionate al massimo a 2400 pixel prima dell’upload; gli originali locali restano conservati.

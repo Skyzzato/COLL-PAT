@@ -19,7 +19,7 @@ class V014PersistenceTest {
         val name="version-policy-test";context.deleteDatabase("$name.db");var offline=false
         val client=OkHttpClient.Builder().addInterceptor{chain->
             if(offline)throw java.io.IOException("offline test")
-            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("test").body("{\"minimum_supported_version\":\"0.15\",\"latest_version\":\"0.15\"}".toResponseBody("application/json".toMediaType())).build()
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("test").body("{\"minimum_supported_version\":\"99.0\",\"latest_version\":\"99.0\"}".toResponseBody("application/json".toMediaType())).build()
         }.build()
         val repo=Repository(context,"$name.db",name,client)
         repo.store.save(JSONObject().put("base","https://version.example.test").put("public_key","sb_publishable_test"))
@@ -48,7 +48,7 @@ class V014PersistenceTest {
         val pref="test-auth-v014";context.getSharedPreferences(pref,0).edit().clear().commit();val store=SessionStore(context,pref)
         val paths=mutableListOf<String>();var refreshCount=0
         val client=OkHttpClient.Builder().addInterceptor{chain->
-            val r=chain.request();paths.add(r.url.encodedPath);assertEquals("sb_publishable_synthetic",r.header("apikey"));assertEquals("0.14",r.header("X-Coll-Pat-Version"))
+            val r=chain.request();paths.add(r.url.encodedPath);assertEquals("sb_publishable_synthetic",r.header("apikey"));assertEquals(BuildConfig.VERSION_NAME.removeSuffix("-demo"),r.header("X-Coll-Pat-Version"))
             var code=200;val body=when{
                 r.url.encodedPath.endsWith("signup")->"{\"user\":{\"id\":\"${DemoMode.user}\"}}"
                 r.url.query?.contains("refresh_token")==true->{refreshCount++;"{\"access_token\":\"renewed\",\"refresh_token\":\"rotated\"}"}

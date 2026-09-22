@@ -34,16 +34,16 @@ class V013PersistenceTest {
         db.dao().retryBlocked("alice");assertTrue(db.dao().pending("alice").isEmpty());db.close();context.deleteDatabase(name);Unit
     }
     private suspend fun draft():Visit{repo.prepareDemo();val pack=repo.dao.packagesNow(repo.owner()).first{it.id==AppSpec.PACKAGE};return repo.begin(JSONObject(pack.body).getJSONArray("points").getJSONObject(0),pack,"LIST")}
-    private suspend fun evidence(v:Visit){repo.appendEvent(v.id,JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("acquired_at","2026-01-01T00:00:00Z").put("latitude",46.0).put("longitude",11.0).put("accuracy_m",5).put("age_s",0).put("permission","PRECISE").put("applied_limits",JSONObject().put("max_accuracy_m",10).put("radius_m",15)).put("local_evaluation",JSONObject().put("state","COMPATIBILE").put("distance_m",8)))}
+    private suspend fun evidence(v:Visit){repo.appendEvent(v.id,JSONObject().put("inspection_id",v.id).put("manhole_id",v.manholeId).put("method",AcquisitionPolicy.METHOD).put("sample_count",5).put("duration_ms",5000).put("sample_span_ms",4000).put("match_outcome","VERIFIED").put("id",java.util.UUID.randomUUID().toString()).put("acquired_at","2026-01-01T00:00:00Z").put("latitude",46.0).put("longitude",11.0).put("accuracy_m",5).put("age_s",0).put("permission","PRECISE").put("applied_limits",JSONObject().put("max_accuracy_m",10).put("radius_m",15)).put("local_evaluation",JSONObject().put("state","COMPATIBILE").put("distance_m",8)))}
     @Test fun draftLocalOnlyDoubleTapAndNewVisitSameDay()=runBlocking{
         assumeTrue(BuildConfig.DEMO);val first=draft();val second=draft();assertNotEquals(first.id,second.id)
         val b=JSONObject(first.body);b.getJSONObject("sheet").put("notes","Last note intact").put("exception_reason","Synthetic failed fix")
         repo.saveDraft(first.id,b);assertTrue(repo.dao.pendingVisit(first.id,first.owner).isEmpty());evidence(first)
         coroutineScope{awaitAll(async{repo.complete(first.id,b,"COMPLETO")},async{repo.complete(first.id,b,"COMPLETO")})}
-        assertEquals(1,repo.dao.pendingVisit(first.id,first.owner).size);assertEquals("Last note intact",JSONObject(repo.dao.visit(first.id,first.owner)!!.body).getJSONObject("sheet").getString("notes"))
+        assertEquals(0,repo.dao.pendingVisit(first.id,first.owner).size);assertEquals("Last note intact",JSONObject(repo.dao.visit(first.id,first.owner)!!.body).getJSONObject("sheet").getString("notes"))
         repo.saveDraft(first.id,JSONObject(first.body));assertEquals("COMPLETO",repo.dao.visit(first.id,first.owner)!!.operational)
         val b2=JSONObject(second.body);b2.getJSONObject("sheet").put("exception_reason","Synthetic failed fix");evidence(second);repo.complete(second.id,b2,"COMPLETO")
-        assertEquals(1,repo.dao.pendingVisit(second.id,second.owner).size);Unit
+        assertEquals(0,repo.dao.pendingVisit(second.id,second.owner).size);Unit
     }
     @Test fun eventCancellationAndOfflineAuditSurviveReopen()=runBlocking{
         assumeTrue(BuildConfig.DEMO);val v=draft();evidence(v)
@@ -51,7 +51,7 @@ class V013PersistenceTest {
         repo.cancel(v.id,event,"Rilevazione errata");assertNull(lastEvidence(JSONObject(repo.dao.visit(v.id,v.owner)!!.body)));assertTrue(repo.dao.pendingVisit(v.id,v.owner).isEmpty())
         evidence(v);val body=JSONObject(repo.dao.visit(v.id,v.owner)!!.body);body.getJSONObject("sheet").put("exception_reason","Synthetic fix");repo.complete(v.id,body,"COMPLETO")
         repo.cancel(v.id,null,"Prova annullata")
-        val reopened=Repository(context);try{assertTrue(isCancelled(reopened.dao.visit(v.id,v.owner)!!));assertEquals(listOf("shared_inspection","cancel"),reopened.dao.pendingVisit(v.id,v.owner).map{it.kind});assertEquals(2,reopened.dao.audits(v.owner,v.id).size)}finally{reopened.db.close()};Unit
+        val reopened=Repository(context);try{assertTrue(isCancelled(reopened.dao.visit(v.id,v.owner)!!));assertEquals(listOf("cancel"),reopened.dao.pendingVisit(v.id,v.owner).map{it.kind});assertEquals(2,reopened.dao.audits(v.owner,v.id).size)}finally{reopened.db.close()};Unit
     }
     @Test fun syntheticSeedIsOneTimeAndImportsAreReactive()=runBlocking{
         assumeTrue(BuildConfig.DEMO);repo.prepareDemo();val items=repo.dao.catalogNow(repo.owner());val c=items.first{it.kind=="collector"};val original=c.body

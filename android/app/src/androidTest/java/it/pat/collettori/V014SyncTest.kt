@@ -53,7 +53,7 @@ class V014SyncTest {
         try{
             repo.prepareWorkspace();repo.catalog();val pack=repo.dao.pack(repo.owner(),AppSpec.PACKAGE)!!;val point=JSONObject(pack.body).getJSONArray("points").getJSONObject(0);val v=repo.begin(point,pack,"LIST")
             val event=JSONObject().put("id",UUID.randomUUID().toString()).put("acquired_at","2026-09-22T10:00:00Z").put("latitude",point.getDouble("latitude")).put("longitude",point.getDouble("longitude")).put("accuracy_m",5).put("age_s",0).put("permission","PRECISE").put("applied_limits",JSONObject().put("max_accuracy_m",10).put("radius_m",15)).put("local_evaluation",JSONObject().put("state","COMPATIBILE").put("distance_m",0))
-            repo.appendEvent(v.id,event)
+            repo.appendEvent(v.id,event.put("inspection_id",v.id).put("manhole_id",v.manholeId).put("method",AcquisitionPolicy.METHOD).put("sample_count",5).put("duration_ms",5000).put("sample_span_ms",4000).put("match_outcome","VERIFIED"))
             val sending=async(Dispatchers.IO){repo.sync()}
             assertTrue(entered.await(15,TimeUnit.SECONDS))
             val body=JSONObject(repo.dao.visit(v.id,v.owner)!!.body);body.getJSONObject("sheet").put("notes","Final notes while draft upload is in flight")

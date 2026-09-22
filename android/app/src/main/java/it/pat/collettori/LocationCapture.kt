@@ -15,12 +15,62 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
+import android.location.Location
+import android.os.Looper
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import kotlinx.coroutines.*
+import kotlin.coroutines.coroutineContext
 
-/** One foreground request. No background location and no route recording. */
-class LocationCapture(private val context:Context):EvidenceCollector{
+interface InspectionCapture {
+    suspend fun acquire(inspection:JSONObject,rule:Rule,progress:(Int)->Unit):JSONObject
+    fun cancel()
+}
+/** Foreground orientation request and cancellable inspection acquisition; no background tracking. */
+class LocationCapture(private val context:Context):EvidenceCollector,InspectionCapture{
     private var requestCancellation:CancellationTokenSource?=null
     @Volatile private var userCancelled=false
-    fun cancel(){userCancelled=true;requestCancellation?.cancel()}
+    private var acquisitionJob:Job?=null
+    override fun cancel(){userCancelled=true;requestCancellation?.cancel();acquisitionJob?.cancel()}
+    @Suppress("DEPRECATION")
+    private fun Location.sample()=GpsSample(elapsedRealtimeNanos,latitude,longitude,if(hasAccuracy())accuracy.toDouble() else null,if(Build.VERSION.SDK_INT>=31)isMock else isFromMockProvider)
+    @Suppress("MissingPermission")
+    override suspend fun acquire(inspection:JSONObject,rule:Rule,progress:(Int)->Unit):JSONObject {
+        check(context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED){"Consenti la posizione precisa per registrare una rilevazione GPS."}
+        val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        check(if(Build.VERSION.SDK_INT>=28)manager.isLocationEnabled else manager.isProviderEnabled(LocationManager.GPS_PROVIDER)||manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)){"Localizzazione disattivata. Attivala e riprova."}
+        acquisitionJob=coroutineContext[Job]
+        val client=LocationServices.getFusedLocationProviderClient(context)
+        var callback:LocationCallback?=null
+        try{
+            val preliminary=withTimeoutOrNull(2500){client.lastLocation.await()}?.sample()
+            if(!AcquisitionPolicy.fresh(preliminary,SystemClock.elapsedRealtimeNanos())){
+                val refreshed=collect(inspection,rule)
+                error(if(refreshed.isNull("error"))"Localizzazione aggiornata. Premi di nuovo Rileva posizione per avviare l’acquisizione." else "Nessuna misura recente. "+refreshed.optString("error"))
+            }
+            AcquisitionPolicy.validate(preliminary,SystemClock.elapsedRealtimeNanos(),rule.accuracy)?.let{error(it)}
+            val start=SystemClock.elapsedRealtimeNanos();val wallStart=Instant.now().toString();val window=GpsWindow(start,rule.accuracy)
+            callback=object:LocationCallback(){override fun onLocationResult(result:LocationResult){result.locations.forEach{window.add(it.sample(),SystemClock.elapsedRealtimeNanos())}}}
+            val request=LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,1000).setMinUpdateIntervalMillis(500).setMaxUpdateDelayMillis(0).setMaxUpdateAgeMillis(0).build()
+            client.requestLocationUpdates(request,callback,Looper.getMainLooper()).await()
+            while(SystemClock.elapsedRealtimeNanos()-start<AcquisitionPolicy.DURATION_NS){
+                ensureActiveCapture();window.failure?.let{error(it)}
+                progress(((AcquisitionPolicy.DURATION_NS-(SystemClock.elapsedRealtimeNanos()-start)+999_999_999)/1_000_000_000).toInt().coerceIn(0,5));delay(100)
+            }
+            ensureActiveCapture()
+            return window.finish(SystemClock.elapsedRealtimeNanos()).put("id",UUID.randomUUID().toString())
+                .put("inspection_id",inspection.getString("id")).put("manhole_id",inspection.getString("manhole_id"))
+                .put("user_id",inspection.getString("user_id")).put("device_id",inspection.getString("device_id")).put("dataset_id",inspection.getString("dataset_id"))
+                .put("requested_at",wallStart).put("acquisition_started_at",wallStart).put("acquired_at",Instant.now().toString())
+                .put("acquisition_ended_at",Instant.now().toString()).put("permission","PRECISE").put("mock",false).put("error",JSONObject.NULL)
+                .put("provider","fused").put("rule_version",rule.version).put("app_version",AppSpec.version).put("applied_limits",rule.json())
+        }finally{
+            callback?.let{withContext(NonCancellable){withTimeoutOrNull(2500){client.removeLocationUpdates(it).await()}}}
+            acquisitionJob=null
+        }
+    }
+    private suspend fun ensureActiveCapture(){coroutineContext.ensureActive();if(userCancelled)throw CancellationException("Rilevazione annullata")}
     @Suppress("MissingPermission", "DEPRECATION")
     override suspend fun collect(inspection:JSONObject,rule:Rule):JSONObject{
         val precise=context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED

@@ -48,7 +48,7 @@ fun compareVersions(a:String,b:String):Int {
 
 data class FieldSettings(val minZoomPozzetti:Float=14f,val iconSize:Float=7f,val symbol:String="CIRCLE",val asphalt:Boolean=true,val maxDistance:Double=20.0,val maxAccuracy:Double=15.0){
     fun json()=JSONObject().put("zoom",minZoomPozzetti.toDouble()).put("size",iconSize.toDouble()).put("symbol",symbol).put("asphalt",asphalt).put("distance",maxDistance).put("accuracy",maxAccuracy)
-    companion object{fun parse(b:JSONObject)=FieldSettings(b.optDouble("zoom",14.0).coerceIn(8.0,20.0).toFloat(),b.optDouble("size",7.0).coerceIn(4.0,14.0).toFloat(),b.optString("symbol","CIRCLE").takeIf{it in listOf("CIRCLE","RING")}?:"CIRCLE",b.optBoolean("asphalt",true),b.optDouble("distance",20.0).coerceIn(1.0,100.0),b.optDouble("accuracy",15.0).coerceIn(1.0,50.0))}
+    companion object{fun parse(b:JSONObject)=FieldSettings(b.optDouble("zoom",14.0).coerceIn(8.0,20.0).toFloat(),b.optDouble("size",7.0).coerceIn(4.0,14.0).toFloat(),ManholeSymbol.fromId(b.optString("symbol","CIRCLE")).name,b.optBoolean("asphalt",true),b.optDouble("distance",20.0).coerceIn(1.0,100.0),b.optDouble("accuracy",15.0).coerceIn(1.0,50.0))}
 }
 fun acceptableMeasure(value:Double?,limit:Double)=value!=null&&value.isFinite()&&value>=0&&value<=limit
 fun gpsQuality(event:JSONObject?):String {

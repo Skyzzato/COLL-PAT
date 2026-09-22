@@ -7,6 +7,13 @@ object DemoMode {
     const val base = "demo://local"
     const val user = "00000000-0000-4000-8000-000000000001"
     const val owner = "$base#$user"
+    fun missingCatalog(data:JSONObject,existing:List<CatalogItem>):List<CatalogItem>{
+        validateDataset(data)
+        val ids=existing.filter{it.owner==owner}.map{it.id}.toSet()
+        return listOf("collectors" to "collector","points" to "point","segments" to "segment").flatMap{(array,kind)->
+            data.getJSONArray(array).objects().filter{it.getString("id") !in ids}.map{CatalogItem(owner,it.getString("id"),kind,it.toString(),"SEED_LOCAL")}
+        }
+    }
     fun validateDataset(p:JSONObject) {
         require(p.getBoolean("synthetic")){"Dataset dimostrativo non riconosciuto"}
         val points=p.getJSONArray("points").objects()

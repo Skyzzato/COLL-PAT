@@ -1,39 +1,17 @@
-# Regola GPS sperimentale
+# GPS — COLL-PAT v0.15
 
-Fonte iniziale unica: `shared/gps-rule.json`. Il bootstrap la pubblica nel database. L'app scarica la versione ufficiale dal catalogo; i valori non sono liberamente modificabili dall'operaio. Solo un amministratore può pubblicare una nuova versione tramite API/portale. Le vecchie versioni restano immutabili.
+Le impostazioni esistenti `FieldSettings.maxAccuracy/maxDistance` sono l’unica fonte delle soglie operative. La regola gps-1 fornisce gli altri parametri; ogni evento conserva le soglie applicate. Le vecchie registrazioni mantengono i loro esiti, senza riclassificazione automatica.
 
-| Parametro | Valore iniziale |
-|---|---:|
-| Raggio operativo R | 20 m |
-| Accuratezza dispositivo massima | 15 m |
-| Età massima | 10 s |
-| Timeout richiesta | 45 s |
-| Incertezza cartografica massima | 10 m |
+Prima della registrazione si controllano permesso preciso, servizio attivo, misura con timestamp monotono recente (massimo 10 secondi), coordinate e accuracy valide. Accuracy maggiore della soglia blocca prima del conto alla rovescia, senza evento/outbox; l’uguaglianza è ammessa. Se manca una misura recente si richiede un aggiornamento corrente e si invita a riprovare: questo aggiornamento non registra eventi.
 
-Valori di prova, non soglie contrattuali o scientificamente certificate.
+La finestra dura cinque secondi (`elapsedRealtimeNanos`). Gli aggiornamenti aggiuntivi chiedono frequenza di circa un secondo; callback, duplicati o misure fuori ordine non equivalgono a nuovi campioni. Occorrono almeno tre misure distinte, span almeno due secondi e ultimo campione al massimo due secondi dalla conclusione. Accuratezza peggiorata oltre soglia interrompe il tentativo. Annullamento, background, cambio modello o uscita eliminano il tentativo pendente; le callback aggiuntive vengono rimosse in `finally`. Le condizioni sono centralizzate in AcquisitionPolicy/GpsWindow, con clock/campioni simulabili nei test.
 
-## Acquisizione
+Media spaziale dei vettori unitari sulla sfera geografica, coerente con la distanza haversine già adottata (raggio 6371008,8 m). L’indicatore di accuratezza è il massimo dei campioni, senza divisione per N o √N. `dispersion_m` è la distanza massima dei campioni dalla media; non è accuracy. Nessuno dei due valori è una stima statistica certificata. Le coordinate cartografiche non vengono cambiate.
 
-`CurrentLocationRequest` con priorità alta, `maxUpdateAgeMillis=0`, durata 45 s e cancellazione. Una singola richiesta corrente con controllo ulteriore dell'età calcolata da `elapsedRealtimeNanos`; non si usa l'ultima posizione nota, né geolocalizzazione IP. L'app conserva il risultato della richiesta, non sceglie la misura più vicina al manufatto. La sincronizzazione non chiama il componente di localizzazione.
+La media viene valutata con GpsRule: distanza d, accuracy a, incertezza cartografica g e soglia R. `d+a+g <= R` è compatibile; `d-a-g > R` non compatibile; margine, incertezza sconosciuta o più manufatti entro R richiedono verifica. Il server ricalcola sul catalogo attivo e sulle soglie dell’evento; un disaccordo blocca l’invio e conserva la copia locale.
 
-Ogni richiesta crea un evento nuovo, anche in caso di permesso negato, servizi disattivati, timeout o assenza del risultato. Il flag simulazione può essere `null`: ciò non equivale a un'attestazione di autenticità. Richiedere alta accuratezza non garantisce che il telefono la ottenga.
+Corrispondenza verificata: un solo evento definitivo. Altrimenti il dialogo consente annullamento oppure Continua con eccezione. La seconda azione porta scroll, focus e tastiera all’unico campo Eccezione GPS; non salva. Una motivazione non vuota e una seconda conferma registrano l’evento con `match_outcome=EXCEPTION`. L’accuratezza oltre soglia non è derogabile. Nessun riuso per altre ispezioni, nessun cambio automatico del pozzetto.
 
-## Valutazione riproducibile
+JSON evento conservato in Room/outbox/server: UUID, ispezione, pozzetto, utente, dispositivo, inizio/fine UTC e monotoni, numero e span dei campioni, coordinate medie, accuracy massima, dispersione, distanza/esito, parametri, metodo `SPHERICAL_MEAN_MAX_ACCURACY_V1` e motivazione. Le card mostrano in rosso «Corrispondenza non verificata — eccezione motivata», distinta dal vecchio GPS impreciso/non affidabile.
 
-Distanza geodetica sferica con formula haversine e raggio medio terrestre `6371008.8 m`, identici in Python e Kotlin. È un'approssimazione dichiarata della distanza terrestre, da valutare nel pilota; non vengono mescolati algoritmi ellissoidali e sferici tra client e server.
-
-1. Coordinate assenti, errore di acquisizione, età assente/negativa o oltre 10 s: `NON_DISPONIBILE`.
-2. Permesso approssimativo, accuratezza assente/oltre limite, g sconosciuta/oltre limite, flag mock positivo o ambiguità: `INCERTA`. La distanza viene mantenuta quando calcolabile.
-3. Con prerequisiti validi: `d+a+g <= R` → `COMPATIBILE`; `d-a-g > R` → `NON_COMPATIBILE`; altrimenti `INCERTA`.
-
-Ambiguità della regola gps-1: più di un pozzetto della **stessa versione territoriale** entro R dalla misura. È un criterio iniziale riproducibile, non una stima universale dell'ambiguità; verificare i confini delle aree e i manufatti adiacenti nel pilota. Le aree vanno distribuite con adeguato contesto, evitando tagli fra manufatti vicini.
-
-La somma dei margini è una regola prudenziale operativa, non un intervallo di confidenza. g non nota rimane null. GPS debole non aumenta automaticamente R.
-
-Ogni evento conserva dati originari e valutazione locale con parametri. Il server usa la copia ufficiale della **versione del dataset dichiarata dalla visita**, ricalcola distanza/ambiguità/esito con la versione della regola registrata e conserva entrambi gli esiti. Non sostituisce il dato storico con l'ultima anagrafica. L'ultima acquisizione esplicita della visita determina il riscontro riepilogativo; gli eventi precedenti rimangono visibili.
-
-## Orari e limiti
-
-Orari del dispositivo: richiesta, acquisizione, apertura bozza, completamento originario ed eventuale completamento della revisione. Ricezione: orario server distinto. Timestamp ISO 8601 con offset/UTC; presentazione Europe/Rome. L'orologio offline non è certificato. Il riferimento monotono permette di misurare l'età della localizzazione, non certifica la data civile.
-
-Posizioni simulate non segnalate, credenziali condivise, dispositivi compromessi e dichiarazioni non veritiere rimangono rischi residui. Hash del pacchetto e delle operazioni verificano integrità/idempotenza, non veridicità dell'attività. Nessuna penale, accusa, controllo tecnico certificato o apertura verificata è derivata dal GPS.
+Bozze e foto condivise non richiedono una nuova rilevazione. Un impedimento senza GPS registra il motivo operativo senza inventare un evento di posizione fallito. Le vecchie evidenze fallite rimangono nello storico. Orologio civile e dichiarazioni dell’operatore non sono certificati; nessuna prova GPS su telefono fisico è implicita nei test simulati.

@@ -8,29 +8,46 @@ data class LayerMapping(val layer:String,val fields:Map<String,String>) {
     fun value(f:ShapeFeature,key:String)=fields[key]?.takeIf{it.isNotBlank()}?.let{f.fields[it]}?:""
     fun json()=JSONObject(fields).put("layer",layer)
 }
-data class ImportPlan(val items:List<CatalogItem>,val preview:JSONObject,val provenance:JSONObject,val warnings:List<String>,val inserted:Int,val updated:Int,val unchanged:Int)
+data class ImportCounts(val inserted:Int,val updated:Int,val unchanged:Int,val missing:Int){
+    fun json()=JSONObject().put("inserted",inserted).put("updated",updated).put("unchanged",unchanged).put("missing",missing)
+}
+data class KeyReport(val field:String,val empty:Int,val duplicates:Int,val examples:List<String>){val valid get()=field.isNotBlank()&&empty==0&&duplicates==0}
+fun keyReport(layer:ShapeLayer,field:String):KeyReport{
+    val values=layer.features.map{it.fields[field].orEmpty()}
+    val repeated=values.filter{it.isNotBlank()}.groupingBy{it}.eachCount().filterValues{it>1}
+    return KeyReport(field,values.count{it.isBlank()},repeated.values.sumOf{it-1},values.mapIndexedNotNull{i,v->
+        if(v.isBlank()||v in repeated)"Record ${i+1}: ${if(v.isBlank())"vuoto" else v} · "+layer.features[i].fields.entries.take(4).joinToString{"${it.key}=${it.value}"} else null
+    }.take(5))
+}
+data class ImportPlan(val items:List<CatalogItem>,val preview:JSONObject,val provenance:JSONObject,val warnings:List<String>,val inserted:Int,val updated:Int,val unchanged:Int,val missing:List<CatalogItem>,val counts:Map<String,ImportCounts>)
 
 object ImportPlanner {
     fun propose(layer:ShapeLayer):LayerMapping {
         val aliases=mapOf("key" to listOf("source_id","id","fid","uuid"),"code" to listOf("code","codice","cod","name"),"description" to listOf("description","descrizion","descr","nome"),"collector" to listOf("collector","collettore","coll_cod"),"asset_type" to listOf("tipo","type","asset_type"),"under_asphalt" to listOf("under_asph","asfalto","sotto_asf"),"sequence" to listOf("sequence","sequenza","ordine"),"chainage" to listOf("progressiv","chainage","prog_m"),"branch" to listOf("ramo","branch"),"from" to listOf("from_id","da","inizio"),"to" to listOf("to_id","a","fine"),"previous" to listOf("prev_id","precedente"),"next" to listOf("next_id","successivo"))
-        return LayerMapping(layer.name,aliases.mapValues{(_,options)->layer.fields.firstOrNull{it.lowercase() in options}?:""})
+        val fields=aliases.mapValues{(_,options)->layer.fields.firstOrNull{it.lowercase() in options}?:""}.toMutableMap()
+        fields["key"]=listOf("source_id","uuid","id","code","codice").firstNotNullOfOrNull{name->layer.fields.firstOrNull{it.equals(name,true)&&keyReport(layer,it).valid}}?:""
+        return LayerMapping(layer.name,fields)
     }
     fun plan(archive:ShapeArchive,mappings:List<LayerMapping>,source:String,fallbackCollector:String,mode:String,orderConfirmed:Boolean,allowNewKeys:Boolean,tolerance:Double,existing:List<CatalogItem>,owner:String):ImportPlan {
         require(source.trim().length>=3){"Indicare un nome sorgente stabile (almeno 3 caratteri)"};require(tolerance.isFinite()&&tolerance in 0.0..20.0){"Tolleranza estremi: 0–20 metri"}
         require(mode in listOf("LINES","ORDERED","ISOLATED"));if(mode=="ORDERED")require(orderConfirmed){"Confermare l'ordine e l'origine dei rami nell'anteprima"}
+        require(!allowNewKeys){"Ogni layer richiede un identificativo stabile: non vengono generati identificativi sostitutivi per chiavi mancanti."}
+        archive.layers.forEach{layer->val report=keyReport(layer,mappings.first{it.layer==layer.name}.fields["key"].orEmpty())
+            require(report.valid){"${layer.name}: campo identificativo '${report.field}', ${report.empty} vuoti, ${report.duplicates} duplicati. Scegliere una chiave stabile univoca o correggere il file sorgente. "+report.examples.joinToString("; ")}
+        }
         val warnings=mutableListOf<String>();val staged=linkedMapOf<String,CatalogItem>();val all=existing.associateBy{it.id}.toMutableMap();val sourceKeys=mutableSetOf<String>()
         fun identity(kind:String,layer:String,key:String):String {
-            if(key.isBlank()){require(allowNewKeys){"$layer: chiave sorgente assente; autorizzare solo nuovi oggetti"};return UUID.randomUUID().toString()}
+            require(key.isNotBlank()){"$layer: chiave sorgente assente"}
             val src="$source|$layer|$kind|$key";require(sourceKeys.add(src)){"Chiave sorgente duplicata in $layer: $key"}
             return existing.firstOrNull{it.kind==kind&&JSONObject(it.body).optString("source_identity")==src}?.id?:UUID.randomUUID().toString()
         }
         fun put(kind:String,data:JSONObject){val id=data.getString("id");val item=CatalogItem(owner,id,kind,data.toString());staged[id]=item;all[id]=item}
         fun collectors(f:ShapeFeature,m:LayerMapping):List<String>{
             val code=m.value(f,"collector")
-            if(code.isBlank()){require(all[fallbackCollector]?.kind=="collector"){"Scegliere il collettore per i record senza campo collettore"};return listOf(fallbackCollector)}
+            if(code.isBlank()){val selected=all[fallbackCollector];require(selected?.kind=="collector"){"Scegliere il collettore per i record senza campo collettore"};require(!JSONObject(selected.body).optBoolean("archived")){"Il collettore scelto è archiviato: ripristinarlo prima dell'importazione"};return listOf(fallbackCollector)}
             // The administrator explicitly maps this field to catalogue codes; no asset matching by code.
-            val found=all.values.firstOrNull{it.kind=="collector"&&JSONObject(it.body).getString("code")==code}
-            if(found!=null)return listOf(found.id)
+            val found=all.values.firstOrNull{it.kind=="collector"&&JSONObject(it.body).getString("code").equals(code,ignoreCase=true)}
+            if(found!=null){require(!JSONObject(found.body).optBoolean("archived")){"Il collettore $code è archiviato: ripristinarlo prima dell'importazione"};return listOf(found.id)}
             val id=UUID.randomUUID().toString();put("collector",collectorDefaults(id,code,code+" — importato").put("synthetic",false));return listOf(id)
         }
         val keyToPoint=mutableMapOf<String,MutableList<String>>();val rawPoints=mutableMapOf<String,Pair<ShapeFeature,LayerMapping>>()
@@ -130,11 +147,27 @@ object ImportPlanner {
             val segments=all.values.filter{it.kind=="segment"&&cid in JSONObject(it.body).memberships()}.map{JSONObject(it.body)}.distinctBy{it.getString("id")}
             c.put("length_m",if(segments.isEmpty())JSONObject.NULL else segments.sumOf{geometryLength(it.getJSONObject("geometry"))}).put("length_source",if(segments.isEmpty())"UNAVAILABLE" else if(segments.any{it.optBoolean("schematic")})"ESTIMATED" else "MEASURED").put("length_complete",false);put("collector",c)
         }
-        if(allowNewKeys)warnings.add("Oggetti privi di chiave: nuovi UUID, nessun aggiornamento per somiglianza")
-        val inserted=staged.keys.count{it !in existing.map{e->e.id}};val unchanged=staged.values.count{s->existing.any{it.id==s.id&&canonicalJson(JSONObject(it.body))==canonicalJson(JSONObject(s.body))}};val updated=staged.size-inserted-unchanged
-        val report=JSONObject().put("inserted",inserted).put("updated",updated).put("unchanged",unchanged).put("warnings",JSONArray(warnings.distinct())).put("errors",0)
-        val provenance=JSONObject().put("id",run).put("source",source).put("hash",archive.hash).put("mapping",JSONObject().put("layers",JSONArray(mappings.map{it.json()})).put("mode",mode).put("fallback_collector",fallbackCollector).put("tolerance_m",tolerance).put("order_confirmed",orderConfirmed)).put("report",report)
-        val preview=JSONObject().put("osm",true).put("basemap",JSONObject.NULL).put("points",JSONArray(staged.values.filter{it.kind=="point"}.map{JSONObject(it.body)})).put("segments",JSONArray(staged.values.filter{it.kind=="segment"}.map{JSONObject(it.body)}))
-        return ImportPlan(staged.values.toList(),preview,provenance,warnings.distinct(),inserted,updated,unchanged)
+        val before=existing.associateBy{it.id}
+        val inserted=staged.keys.count{it !in before};val unchanged=staged.values.count{s->before[s.id]?.let{canonicalJson(JSONObject(it.body))==canonicalJson(JSONObject(s.body))}==true};val updated=staged.size-inserted-unchanged
+        // Compare only layers supplied by this source. An omitted layer may be a partial update.
+        val layerKinds=archive.layers.map{it.name to it.kind}.toMutableSet()
+        if(mode=="ORDERED")layerKinds.add("schematic" to "segment")
+        val pointLayers=archive.layers.filter{it.kind=="point"}.map{it.name}.toSet()
+        val scopePoints=existing.filter{it.kind=="point"&&JSONObject(it.body).let{p->p.optString("source")==source&&p.optString("source_layer") in pointLayers}}.map{it.id}.toSet()+rawPoints.keys
+        val missing=existing.filter{item->
+            val data=JSONObject(item.body)
+            item.id !in staged && layerKinds.any{(layer,kind)->item.kind==kind && data.optString("source_identity").startsWith("$source|$layer|$kind|") && (layer!="schematic"||data.optString("from_id") in scopePoints&&data.optString("to_id") in scopePoints)}
+        }
+        val counts=listOf("collector","point","segment").associateWith{kind->
+            val items=staged.values.filter{it.kind==kind}
+            val fresh=items.count{it.id !in before}
+            val same=items.count{s->before[s.id]?.let{canonicalJson(JSONObject(it.body))==canonicalJson(JSONObject(s.body))}==true}
+            ImportCounts(fresh,items.size-fresh-same,same,missing.count{it.kind==kind})
+        }
+        if(missing.isNotEmpty())warnings.add("${missing.size} elementi assenti dal nuovo file: conservati, senza archiviazione automatica")
+        val report=JSONObject().put("inserted",inserted).put("updated",updated).put("unchanged",unchanged).put("missing",missing.size).put("by_kind",JSONObject().apply{counts.forEach{(kind,count)->this.put(kind,count.json())}}).put("warnings",JSONArray(warnings.distinct())).put("errors",0)
+        val provenance=JSONObject().put("id",run).put("source",source).put("hash",archive.hash).put("mapping",JSONObject().put("layers",JSONArray(mappings.map{it.json()})).put("encodings",org.json.JSONObject().apply{archive.layers.forEach{this.put(it.name,org.json.JSONObject().put("choice",it.encodingChoice).put("applied",it.encoding).put("basis",it.encodingNote))}}).put("mode",mode).put("fallback_collector",fallbackCollector).put("tolerance_m",tolerance).put("order_confirmed",orderConfirmed)).put("report",report)
+        val preview=JSONObject().put("osm",true).put("basemap",JSONObject.NULL).put("collectors",JSONArray(all.values.filter{it.kind=="collector"&&it.id in touched}.map{JSONObject(it.body)})).put("points",JSONArray(staged.values.filter{it.kind=="point"}.map{JSONObject(it.body)})).put("segments",JSONArray(staged.values.filter{it.kind=="segment"}.map{JSONObject(it.body)}))
+        return ImportPlan(staged.values.toList(),preview,provenance,warnings.distinct(),inserted,updated,unchanged,missing,counts)
     }
 }

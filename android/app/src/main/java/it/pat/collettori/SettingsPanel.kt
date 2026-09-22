@@ -1,20 +1,19 @@
 package it.pat.collettori
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.*
-import org.json.JSONObject
-import java.time.Instant
 
 @Composable fun SettingsSection(title:String,icon:Int,initial:Boolean=false,content:@Composable ColumnScope.()->Unit){
     var expanded by rememberSaveable{mutableStateOf(initial)}
@@ -26,12 +25,7 @@ import java.time.Instant
 @Composable fun SettingsPanel(repo:Repository,settings:FieldSettings,onSettings:(FieldSettings)->Unit,catalog:List<CatalogItem>,visits:List<Visit>,queue:List<Pending>,onAccount:()->Unit,onMessage:(String)->Unit,onArchiveExport:()->Unit){
     val scope=rememberCoroutineScope();var busy by remember{mutableStateOf(false)}
     fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:Exception){onMessage(friendlyError(e))}finally{busy=false}}}
-    var csv by remember{mutableStateOf("")}
-    val exporter=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")){uri->if(uri!=null)task{
-        try{withContext(Dispatchers.IO){repo.context.contentResolver.openOutputStream(uri)?.use{it.write(csv.toByteArray(Charsets.UTF_8))}?:error("File non scrivibile")}}
-        catch(e:java.io.IOException){error("Esportazione CSV non riuscita. Scegli un’altra cartella o riprova.")}
-        onMessage("CSV salvato")
-    }}
+    var showImport by remember{mutableStateOf(false)}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)){
         Text("Impostazioni",style=MaterialTheme.typography.headlineSmall)
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -40,9 +34,12 @@ import java.time.Instant
             Slider(settings.minZoomPozzetti,{onSettings(settings.copy(minZoomPozzetti=it))},valueRange=8f..20f,steps=23)
             Text("I pozzetti vengono nascosti quando la mappa è troppo zoomata indietro. I tronchi rimangono visibili.",style=MaterialTheme.typography.bodySmall)
             Text("Dimensione pozzetti · %.0f".format(settings.iconSize));Slider(settings.iconSize,{onSettings(settings.copy(iconSize=it))},valueRange=4f..14f,steps=9)
-            Choice("Simbologia",settings.symbol,listOf("CIRCLE" to "Cerchio pieno","RING" to "Anello")){onSettings(settings.copy(symbol=it))}
-            Row{Switch(settings.asphalt,{onSettings(settings.copy(asphalt=it))});Text("Segno interno per pozzetti sotto asfalto",Modifier.padding(10.dp))}
-            InspectionState.entries.forEach{s->Row{Text("● ",color=androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(s.color)));Text(s.label,style=MaterialTheme.typography.bodySmall)}}
+            Choice("Simbologia pozzetti",settings.symbol,ManholeSymbol.entries.map{it.name to it.label}){onSettings(settings.copy(symbol=it))}
+            Row(verticalAlignment=Alignment.CenterVertically){Switch(settings.asphalt,{onSettings(settings.copy(asphalt=it))});Text("Segno interno per pozzetti sotto asfalto",Modifier.padding(horizontal=10.dp))}
+            InspectionState.entries.forEach{s->Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.padding(vertical=2.dp)){
+                Box(Modifier.size(10.dp).background(Color(android.graphics.Color.parseColor(s.color)),CircleShape))
+                Text(s.label,style=MaterialTheme.typography.bodySmall)
+            }}
         }
         SettingsSection("GPS e rilevazione",R.drawable.ic_target){
             Text("Distanza massima dal pozzetto · %.0f m".format(settings.maxDistance))
@@ -53,32 +50,40 @@ import java.time.Instant
         }
         SettingsSection("Ispezioni",R.drawable.ic_history){
             Text("La periodicità segue le visite previste per ciascun collettore.",style=MaterialTheme.typography.bodySmall)
-            OutlinedButton(enabled=!busy,onClick={task{
-                val now=Instant.now();var cached=false
-                if(repo.authenticated())try{repo.downloadHistory(semesterOnly=semester(now))}catch(_:java.io.IOException){cached=true}
-                val currentVisits=repo.dao.visitsNow(repo.owner())
-                if(InspectionCsv.rows(currentVisits,now).isEmpty()){onMessage("Nessuna ispezione conclusa nel semestre corrente");return@task}
-                val pack=JSONObject(repo.dao.pack(repo.owner(),AppSpec.PACKAGE)!!.body)
-                val photoIds=currentVisits.filter{PhotoRepository(repo).list(it).isNotEmpty()}.map{it.id}.toSet()
-                csv=InspectionCsv.export(currentVisits,pack.getJSONArray("points").objects(),pack.getJSONArray("collectors").objects(),photoIds,now);if(cached)onMessage("Senza collegamento: il CSV contiene le ispezioni disponibili sul telefono.");exporter.launch(InspectionCsv.filename(now))
-            }}){ActionIcon(R.drawable.ic_export);Text("Esporta ispezioni semestre")}
+            Text("Il CSV comprende le ispezioni concluse nel trimestre civile corrente.",style=MaterialTheme.typography.bodySmall)
+            QuarterExportButton(repo,onMessage)
             TextButton(onClick=onArchiveExport){Text("Esporta archivio di recupero")}
         }
         SettingsSection("Server e sincronizzazione",R.drawable.ic_sync){
             Text(if(repo.authenticated())"Account server collegato" else "Archivio demo locale")
             Text("${queue.size+visits.count{it.sync=="IN_ATTESA"&&queue.none{op->op.visitId==it.id}}} elementi in attesa")
-            Button(enabled=repo.authenticated()&&!busy,onClick={task{repo.dao.retryBlocked(repo.owner());val done=repo.sync();onMessage(if(done)"Sincronizzazione completata" else "Invio in attesa della rete")}}){Text("Sincronizza")}
+            Button(enabled=repo.authenticated()&&!busy,onClick={task{
+                repo.dao.retryBlocked(repo.owner());val done=repo.sync();val remaining=repo.dao.allPending(repo.owner())
+                onMessage(when{
+                    remaining.any{it.state=="AUTH_REQUIRED"}->"Accedi nuovamente per completare la sincronizzazione. I dati restano sul telefono."
+                    remaining.any{it.state=="CONFLICT"}->"Alcuni dati richiedono una verifica del responsabile prima dell’invio. Le modifiche locali sono conservate."
+                    !done||remaining.isNotEmpty()->"Invio ancora in attesa. Le modifiche sono conservate sul telefono."
+                    else->"Sincronizzazione completata"
+                })
+            }}){Text("Sincronizza")}
             TextButton(enabled=repo.authenticated()&&!busy,onClick={task{repo.catalog();repo.downloadHistory();onMessage("Dati server aggiornati")}}){Text("Aggiorna collettori e ispezioni")}
-            if(queue.any{it.state=="CONFLICT"})Text("Alcune modifiche richiedono una verifica. Apri l’ispezione indicata.",color=MaterialTheme.colorScheme.error)
+            if(queue.any{it.state=="CONFLICT"})Text("Alcune modifiche a ispezioni o dati cartografici richiedono una verifica del responsabile.",color=MaterialTheme.colorScheme.error)
         }
         SettingsSection("Account",R.drawable.ic_account){AccountPanel(repo,onAccount)}
-        if(BuildConfig.DEV_ADMIN||repo.store.get()?.optString("role")=="admin")SettingsSection("Gestione collettori e dati",R.drawable.ic_pipe){AdminPanel(repo,catalog,visits.size,onMessage)}
+        SettingsSection("Dati cartografici",R.drawable.ic_pipe){
+            if(repo.canManageCatalog()){
+                Text(if(repo.authenticated())"Importa uno ZIP completo, verifica l’anteprima e conferma l’aggiornamento del progetto." else "Gli shapefile importati nella demo restano sul telefono.",style=MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick={showImport=true}){Text("Importa shapefile")}
+                AdminPanel(repo,catalog,visits.size,onMessage)
+            }else Text("L’importazione e la modifica dei dati cartografici sono riservate al responsabile del progetto.",style=MaterialTheme.typography.bodySmall)
+        }
         SettingsSection("Informazioni",R.drawable.ic_info){
-            Text("COLL-PAT",style=MaterialTheme.typography.titleLarge);Text("Ispezioni e rilievi dei collettori");Text("Versione 0.14 · build ${BuildConfig.VERSION_CODE}")
-            if(BuildConfig.DEMO)Text("Ambiente demo · dati sintetici locali")
+            Text("COLL-PAT",style=MaterialTheme.typography.titleLarge);Text("Ispezioni e rilievi dei collettori");Text("Versione ${AppSpec.version} · build ${BuildConfig.VERSION_CODE}")
+            if(BuildConfig.DEMO)Text(if(repo.owner()==DemoMode.owner)"Archivio demo · dati sintetici locali" else "Variante demo · progetto server collegato")
             Text("© OpenStreetMap contributors · ODbL",style=MaterialTheme.typography.bodySmall)
         }
     }
+    if(showImport&&repo.canManageCatalog())ImportDialog(repo,catalog,{showImport=false},onMessage)
 }
 
 @Composable fun AuthScreen(repo:Repository,onChange:()->Unit){
@@ -89,7 +94,7 @@ import java.time.Instant
     var email by rememberSaveable{mutableStateOf("")};var password by remember{mutableStateOf("")};var confirmation by remember{mutableStateOf("")}
     var register by rememberSaveable{mutableStateOf(false)};var busy by remember{mutableStateOf(false)};var message by remember{mutableStateOf("")};val scope=rememberCoroutineScope()
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp)){
-        Text("COLL-PAT",style=MaterialTheme.typography.headlineLarge);Text("Versione 0.14",style=MaterialTheme.typography.labelMedium)
+        Text("COLL-PAT",style=MaterialTheme.typography.headlineLarge);Text("Versione ${AppSpec.version}",style=MaterialTheme.typography.labelMedium)
         Spacer(Modifier.height(24.dp));Text(if(register)"Registrazione account" else "Login",style=MaterialTheme.typography.headlineSmall)
         Field("Email",email){email=it}
         OutlinedTextField(password,{password=it},label={Text("Password")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth(),singleLine=true)
@@ -107,6 +112,6 @@ import java.time.Instant
         SettingsSection("Configurazione collegamento",R.drawable.ic_settings,url.isBlank()||key.isBlank()){
             Field("SUPABASE_URL",url){url=it};Field("SUPABASE_PUBLISHABLE_KEY",key){key=it};Field("Progetto applicativo",project){project=it}
         }
-        if(BuildConfig.DEMO)OutlinedButton(enabled=!busy,onClick={scope.launch{repo.store.save(DemoMode.session());repo.prepareWorkspace();onChange()}}){Text("Apri demo offline")}
+        if(BuildConfig.DEMO)OutlinedButton(enabled=!busy,onClick={scope.launch{busy=true;try{repo.prepareDemo(switchAccount=true);onChange()}catch(e:CancellationException){throw e}catch(e:Exception){message=friendlyError(e)}finally{busy=false}}}){Text("Apri demo offline")}
     }
 }

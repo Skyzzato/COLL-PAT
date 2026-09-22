@@ -1,4 +1,4 @@
-# Architettura COLL-PAT v0.14
+# Architettura COLL-PAT v0.15
 
 Compose → Repository → Room/WorkManager → Supabase Auth/RPC/Storage, con cartografia MapLibre. Si mantengono importazione shapefile nativa, catalogo JSONB/PostGIS e distinzione fra archivio demo e account server.
 
@@ -8,10 +8,12 @@ Compose → Repository → Room/WorkManager → Supabase Auth/RPC/Storage, con c
 - `Repository.kt`: modifiche locali serializzate, salvataggio atomico. Le bozze modificate sono durevoli con stato in attesa; il worker congela il payload in outbox prima dell’invio. Un invio definitivo è accodato nella stessa transazione della scheda, anche se il caricamento della bozza precedente è in corso.
 - Revisione server e contatore modifiche locali sono distinti: una ricevuta di una versione precedente non dichiara sincronizzate le modifiche locali successive. Il server usa un confronto condizionale di revisione e ricevute immutabili.
 - `PhotoRepository.kt`: file originali privati, UUID persistenti, metadati prenotati con la scheda, upload JPEG sullo stesso percorso e download autenticato su richiesta. Nessuna URL pubblica inventata.
-- `InspectionCsv.kt`: righe concluse del semestre Europe/Rome, escaping CSV e salvataggio tramite SAF. Con rete aggiorna il semestre dal server, senza scaricare fotografie.
+- `InspectionCsv.kt`: righe concluse del trimestre civile Europe/Rome, escaping CSV e salvataggio tramite SAF. Con rete aggiorna il semestre dal server, senza scaricare fotografie.
 
 Room 3 usa `(owner,id)` per le visite: due account possono conservare copie distinte della stessa bozza, incluso lavoro non inviato. Le migrazioni 1→2→3 preservano i dati. Gli invii del vecchio protocollo sono conservati per recupero esplicito.
 
 La policy di versione viene verificata all’avvio e prima della sincronizzazione. Una policy già nota che blocca la versione viene applicata anche offline; una prima verifica senza rete non elimina l’accesso ai dati locali. Il server controlla indipendentemente la versione nelle RPC.
 
 [Architettura v0.13](history/v0.13/ARCHITECTURE.md) · [GIS](GIS.md) · [Collaudo](VALIDATION-v0.14.md).
+
+La v0.15 aggiunge GpsWindow/LocationCapture per le misure mediate e SaveFeedback per il timer monotono di due secondi. Il modulo è sovrapposto alla pagina precedente, mantenuta viva con filtri e scroll; chiuderlo conserva la cronologia reale. Un esplicito Salva bozza scrive scheda e outbox nella stessa transazione. La sincronizzazione appartiene al worker, non alla schermata.

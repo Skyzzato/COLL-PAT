@@ -50,21 +50,27 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     fun owner()=store.get()?.let{if(it.optString("base")==DemoMode.base)DemoMode.owner else sessionOwner(it)}?:error("Accesso richiesto")
     fun project()=store.get()?.optString("project_id",AppSpec.LOCAL_PROJECT)?:AppSpec.LOCAL_PROJECT
     fun authenticated()=store.get()?.let{it.has("access_token")&&it.optInt("protocol")==AppSpec.PROTOCOL}==true
+    fun canManageCatalog()=mayManageCatalog(store.get(),BuildConfig.DEV_ADMIN)
     fun checkOffline(){check(store.get()!=null){"Accesso richiesto"}}
     private suspend fun generation(account:String)=dao.settingValue(account,"generation")?.toLong()?:if(account==DemoMode.owner)0L else -1L
-    suspend fun prepareDemo(){if(BuildConfig.DEMO&&store.get()==null)store.save(DemoMode.session());prepareWorkspace()}
+    suspend fun prepareDemo(switchAccount:Boolean=false)=syncLock.withLock{mutation.withLock{
+        check(BuildConfig.DEMO){"Dati dimostrativi disponibili soltanto nella variante demo"}
+        if(switchAccount||store.get()==null)store.save(DemoMode.session())
+        prepareWorkspace()
+    }}
     suspend fun prepareWorkspace(){
-        // Demo entry is an explicit action on the authentication screen.
+        // Demo entry is explicit from login or Account; server owners never receive the seed.
         if(store.get()==null)return
         val account=owner()
         if(dao.settingValue(account,"catalog")==null){val rule=JSONObject(context.assets.open("gps-rule.json").bufferedReader().use{it.readText()});dao.setting(Setting(account,"catalog",DemoMode.catalog(rule).toString()))}
-        if(BuildConfig.DEMO&&account==DemoMode.owner&&dao.settingValue(account,"seed-v014")==null){
+        if(BuildConfig.DEMO&&account==DemoMode.owner){
             val text=context.assets.open("demo-package.json").bufferedReader().use{it.readText()};val data=JSONObject(text);DemoMode.validateDataset(data)
             db.withTransaction{
-                if(dao.settingValue(account,"seed-v014")==null){
-                    for((array,kind) in listOf("collectors" to "collector","points" to "point","segments" to "segment"))for(item in data.getJSONArray(array).objects())if(dao.catalogNow(account).none{it.id==item.getString("id")})dao.putCatalog(CatalogItem(account,item.getString("id"),kind,item.toString(),"SEED_LOCAL"))
-                    dao.setting(Setting(account,"seed-v014","done"));rebuildPackage(account);seedExampleInspections(data)
-                }
+                val missing=DemoMode.missingCatalog(data,dao.catalogNow(account))
+                missing.forEach{dao.putCatalog(it)}
+                if(missing.isNotEmpty()||dao.pack(account,AppSpec.PACKAGE)==null)rebuildPackage(account)
+                if(dao.settingValue(account,"seed-v014")==null){seedExampleInspections(data);dao.setting(Setting(account,"seed-v014","done"))}
+                dao.setting(Setting(account,"catalog-state","Demo locale · Trento, Lavis e Via Gilli"))
             }
         }
         // Never assign new reset generations to v0.12 data or outbox operations.
@@ -94,17 +100,30 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         val v=Visit(id,account,point.getString("id"),pack.id,body.toString(),sync=if(authenticated())"IN_ATTESA" else "SALVATO_LOCALMENTE")
         db.withTransaction{dao.save(v);dao.setting(Setting(account,"snapshot:$id",pack.body))};syncNow();v
     }
-    suspend fun saveDraft(id:String,body:JSONObject):Visit=mutation.withLock{db.withTransaction{
+    suspend fun saveDraft(id:String,body:JSONObject,queueNow:Boolean=false):Visit=mutation.withLock{db.withTransaction{
         val current=dao.visit(id,owner())?:error("Bozza assente")
         if(current.operational!="BOZZA"||isCancelled(current))return@withTransaction current
         check(current.sync!="CONFLICT"){"Bozza modificata altrove. Conserva la copia locale e apri la versione server."}
         val merged=JSONObject(body.toString()).put("events",JSONObject(current.body).getJSONArray("events"))
-        stampEdit(merged,JSONObject(current.body));val next=current.copy(body=merged.toString(),sync=if(authenticated())"IN_ATTESA" else current.sync);dao.save(next);syncNow();next
+        stampEdit(merged,JSONObject(current.body));val next=current.copy(body=merged.toString(),sync=if(authenticated())"IN_ATTESA" else "SALVATO_LOCALMENTE");dao.save(next)
+        if(queueNow&&authenticated())queueSnapshot(next)
+        syncNow();next
     }}
     suspend fun appendEvent(id:String,event:JSONObject):Visit=mutation.withLock{db.withTransaction{
         val v=dao.visit(id,owner())?:error("Bozza assente");check(v.operational=="BOZZA"&&!isCancelled(v)&&v.sync!="CONFLICT"){"Scheda registrata: creare una nuova ispezione"}
-        val body=JSONObject(v.body);body.getJSONArray("events").put(event);stampEdit(body,JSONObject(v.body));v.copy(body=body.toString(),sync=if(authenticated())"IN_ATTESA" else v.sync).also{dao.save(it);syncNow()}
+        val body=JSONObject(v.body);validateNewEvidence(event,body)
+        if(body.getJSONArray("events").objects().any{it.optString("id")==event.getString("id")})return@withTransaction v
+        body.getJSONArray("events").put(event)
+        if(motivatedGpsException(event))body.getJSONObject("sheet").put("exception_reason",event.getString("exception_reason"))
+        stampEdit(body,JSONObject(v.body));v.copy(body=body.toString(),sync=if(authenticated())"IN_ATTESA" else v.sync).also{dao.save(it);syncNow()}
     }}
+    private suspend fun queueSnapshot(v:Visit){
+        val b=JSONObject(v.body)
+        val pending=dao.pendingVisit(v.id,v.owner).filter{it.kind=="shared_inspection"}
+        val expected=pending.maxOfOrNull{JSONObject(it.body).getJSONObject("payload").getInt("expected_revision")+1}?:b.optInt("server_revision")
+        b.put("expected_revision",expected).put("photos",JSONArray(PhotoRepository(this).list(v).map{p->JSONObject().put("id",p.getString("photoId")).put("created_at",p.getString("createdAt")).put("storage_path",p.optString("storagePath"))}))
+        enqueue(v.owner,v.id,"shared_inspection",b,b.getLong("generation"))
+    }
     private suspend fun enqueue(account:String,ref:String,kind:String,payload:JSONObject,gen:Long):Pending {
         val id=UUID.randomUUID().toString();val revision=(dao.pendingVisit(ref,account).maxOfOrNull{it.revision}?:0)+1
         val envelope=JSONObject().put("operation_id",id).put("project_id",project()).put("generation",gen).put("payload_version",AppSpec.PROTOCOL).put("kind",kind).put("app_version",AppSpec.version).put("payload",payload)
@@ -119,7 +138,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
             check(current.sync!="CONFLICT"){"Bozza modificata altrove. Conserva la copia locale e apri la versione server."}
             val merged=JSONObject(body.toString()).put("events",JSONObject(current.body).getJSONArray("events"))
             validateInspection(merged,status)
-            if(status=="COMPLETO")check(gpsQuality(lastEvidence(merged))=="RELIABLE"){"GPS non affidabile: acquisisci una misura entro i limiti di accuratezza e distanza."}
+            if(status=="COMPLETO")check(usableInspectionGps(lastEvidence(merged))){"GPS non affidabile: acquisisci una misura accurata e verifica la corrispondenza o motiva l’eccezione."}
             stampEdit(merged,JSONObject(current.body));merged.put("submitted_by",store.get()!!.getString("user_id")).put("submitted_at",Instant.now().toString())
             if(status=="IMPEDITO"){
                 val s=merged.getJSONObject("sheet");s.put("opened",false).put("no_open_reason",s.getString("impediment_reason")).put("cleaning",JSONObject.NULL)
@@ -128,10 +147,10 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
             merged.put("status",status).put("completed_at",Instant.now().toString()).put("periodic_control",status=="COMPLETO")
             merged.put("photos",JSONArray(PhotoRepository(this@Repository).list(current).map{p->JSONObject().put("id",p.getString("photoId")).put("created_at",p.getString("createdAt"))}))
             merged.put("original_evidence",lastEvidence(merged)?.optString("id")?:JSONObject.NULL)
-            val v=current.copy(body=merged.toString(),operational=status,sync="IN_ATTESA",error=null)
+            val v=current.copy(body=merged.toString(),operational=status,sync=if(authenticated())"IN_ATTESA" else "SALVATO_LOCALMENTE",error=null)
             val pendingShared=dao.pendingVisit(id,account).filter{it.kind=="shared_inspection"}
             val expected=pendingShared.maxOfOrNull{JSONObject(it.body).getJSONObject("payload").getInt("expected_revision")+1}?:merged.optInt("server_revision")
-            dao.save(v);enqueue(account,id,"shared_inspection",JSONObject(merged.toString()).put("expected_revision",expected),merged.getLong("generation"));v
+            dao.save(v);if(authenticated())enqueue(account,id,"shared_inspection",JSONObject(merged.toString()).put("expected_revision",expected),merged.getLong("generation"));v
         };syncNow();next
     }
     suspend fun cancel(id:String,eventId:String?,reason:String)=mutation.withLock{db.withTransaction{
@@ -155,8 +174,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     suspend fun setVisible(id:String,value:Boolean){dao.setting(Setting(owner(),"visible:$id",value.toString()))}
     suspend fun visibility():Set<String> = dao.catalogNow(owner()).filter{it.kind=="collector"&&dao.settingValue(owner(),"visible:${it.id}")=="false"}.map{it.id}.toSet()
     suspend fun saveCatalog(items:List<CatalogItem>,provenance:JSONObject?=null)=mutation.withLock{
-        check(BuildConfig.DEV_ADMIN||store.get()?.optString("role")=="admin"){"Gestione riservata al responsabile"}
-        if(authenticated())check(store.get()!!.optString("role")=="admin"){"Amministratore del progetto richiesto"}
+        check(canManageCatalog()){"Gestione riservata al responsabile del progetto"}
         val account=owner();val all=(dao.catalogNow(account).associateBy{it.id}+items.associateBy{it.id}).values
         val collectors=all.filter{it.kind=="collector"}.map{JSONObject(it.body)};collectors.forEach(::validateCollector)
         require(collectors.map{it.getString("code").lowercase()}.distinct().size==collectors.size){"Codice collettore già utilizzato"}

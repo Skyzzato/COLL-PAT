@@ -6,9 +6,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 object InspectionCsv {
-    fun filename(now:Instant)="COLL-PAT_ispezioni_${semester(now).replace('-','_')}.csv"
+    fun quarter(at:Instant):String {val date=at.atZone(ZoneId.of("Europe/Rome"));return "${date.year}-T${(date.monthValue-1)/3+1}"}
+    fun filename(now:Instant)="COLL-PAT_ispezioni_${quarter(now).replace('-','_')}.csv"
     fun cell(value:Any?)="\""+(value?.toString()?:"").replace("\"","\"\"")+"\""
-    fun rows(visits:List<Visit>,now:Instant)=visits.filter{it.operational in listOf("COMPLETO","IMPEDITO")&&!isCancelled(it)&&it.sync!="RESET_OBSOLETE"&&inspectionInstant(it)?.let{at->semester(at)==semester(now)&&!at.isAfter(now)}==true}.sortedByDescending{inspectionInstant(it)}
+    fun rows(visits:List<Visit>,now:Instant)=visits.filter{it.operational in listOf("COMPLETO","IMPEDITO")&&!isCancelled(it)&&it.sync!="RESET_OBSOLETE"&&inspectionInstant(it)?.let{at->quarter(at)==quarter(now)&&!at.isAfter(now)}==true}.sortedByDescending{inspectionInstant(it)}
     fun export(visits:List<Visit>,points:List<JSONObject>,collectors:List<JSONObject>,photoIds:Set<String>,now:Instant):String {
         val ps=points.associateBy{it.getString("id")};val cs=collectors.associateBy{it.getString("id")}
         val controls=Repository.observationKeys+externalKeys+listOf("accessible","opened","cleaning","unsafe","raise_needed","road_repair_needed","impediment_reason","exception_reason")
