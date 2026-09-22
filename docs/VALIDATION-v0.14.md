@@ -4,6 +4,14 @@
 
 Sviluppo incrementale dal commit v0.13 `7daabf4`, senza ricostruzione dell'app. APK demo installata e avviata su emulatore Android 15/API 35. I test SQL utilizzano PostgreSQL 16/PostGIS locali, in database isolati. Nessuna migrazione, registrazione o modifica eseguita sul progetto Supabase remoto; nessun telefono fisico o prova GPS sul campo.
 
+## Ricompilazione con configurazione pubblica, stessa v0.14
+
+L'APK allegata alla pre-release è stata ricompilata con URL `https://zzipvrnhndigepufhkcj.supabase.co` e publishable key forniti dal responsabile, tramite `android/local.properties` escluso da Git. La presenza dei due valori nel codice DEX compilato è stata verificata. VersionName **0.14-demo**, versionCode **14**, application ID e certificato restano invariati. L'APK precedente è conservata localmente in `local-output/releases/v0.14-before-public-config`.
+
+Su questa ricompilazione sono stati rieseguiti `testDemoUnitTest` (**50 passati**), `lintDemo` (**0 errori, 34 warning**), `assembleDemo`, `assembleDemoAndroidTest` e l'instrumentation Android (**13 passati**), dopo installazione con `adb install -r`. Non sono cambiate logica applicativa o migrazioni; i risultati Python/SQL e della variante debug riportati sotto appartengono al collaudo iniziale v0.14.
+
+Due verifiche remote di sola lettura, eseguite con la publishable key, hanno restituito HTTP **200**: `/auth/v1/settings` conferma registrazione email abilitata e conferma email obbligatoria; `/rest/v1/rpc/coll_pat_version` restituisce latest/minimum **0.14**. Queste verifiche non costituiscono un collaudo di registrazione, consegna email, accesso di operatori o upload/download Storage.
+
 | Verifica eseguita | Risultato |
 |---|---|
 | Python/backend/SQL | **80 passati**, nessuno skip; un warning di deprecazione AnyIO/Starlette |
@@ -62,14 +70,14 @@ Log, schermate, CSV, hash e backup privati rimangono in `.tools` e `local-output
 
 Room 3 è stata applicata e verificata sull'emulatore. Le migrazioni `202609220003_coll_pat_v014.sql` e `202609220004_coll_pat_photos.sql` sono state applicate e ripetute solo nei database locali di test. Devono essere installate sul progetto remoto dopo le due migrazioni v0.13, secondo [SUPABASE.md](SUPABASE.md).
 
-Restano da configurare URL e publishable key pubblica, provider Auth/email e membri autorizzati del progetto. Dopo tale configurazione va eseguito il collaudo completo con due account reali, RPC e Storage remoto. Nessuna chiave amministrativa va inserita nell'app.
+URL e publishable key pubblica sono già inclusi nell'APK ricompilata. Il provider email risulta abilitato, con conferma dell'indirizzo richiesta. Rimangono da verificare consegna delle email, membri autorizzati e percorso completo con due account reali, RPC e Storage remoto. Nessuna chiave amministrativa va inserita nell'app.
 
 Gli invii v0.13 pendenti sono conservati e sospesi per recupero esplicito: non vengono inventate soglie GPS o attribuzioni mancanti. Le schede restano consultabili; le bozze compatibili possono essere proseguite con nuove misure valide. Il CSV offline può includere soltanto i dati già nella cache. Le foto remote diventano disponibili offline dopo il primo download.
 
 ## Artefatto
 
-- `COLL-PAT-v0.14-demo.apk`, **62955438 byte**.
-- SHA-256: `cd8f2f007f05b89ca1a322e36913c92197a79a392d652cc9b8e3276685acc3d1`.
+- `COLL-PAT-v0.14-demo.apk`, **62955496 byte**.
+- SHA-256: `bdfc7a19340fd3b50f702d8c31c5ff0855677d2ff6a72454b0ebb7bf36ebfac0`.
 - Certificato SHA-256: `acf785391278fa98832980a51e594c88ffb06ff36b590c73c18c917f975080c6`.
 - Application ID `it.pat.collettori.pilot.demo`, versionCode **14**, versionName **0.14-demo**.
 - Repository `Skyzzato/COLL-PAT`, tag **v0.14**, distribuzione come **pre-release** con APK, checksum e questo rapporto.

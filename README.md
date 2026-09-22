@@ -4,6 +4,8 @@ App Android per cartografia, pozzetti, ispezioni periodiche, GPS e fotografie, c
 
 [Pre-release v0.14](https://github.com/Skyzzato/COLL-PAT/releases/tag/v0.14) · [APK demo](https://github.com/Skyzzato/COLL-PAT/releases/download/v0.14/COLL-PAT-v0.14-demo.apk) · [Collaudo](docs/VALIDATION-v0.14.md) · [Requisiti verificati](docs/REQUIREMENTS-v0.14.md)
 
+L'APK v0.14 è stata ricompilata con il collegamento pubblico al progetto Supabase già preimpostato. Versione e versionCode restano 0.14/14; sostituisce l'allegato precedente nella stessa pre-release.
+
 ## Uso
 
 - Login o registrazione email/password; nella variante demo è disponibile **Apri demo offline**. Il recupero password è esplicitamente disattivato. Gli account nuovi richiedono l’abilitazione al progetto da parte del responsabile.
@@ -43,7 +45,7 @@ I test SQL creano database temporanei su localhost e non leggono credenziali rem
 
 ## Limiti verificati
 
-Migrazioni e autorizzazioni collaudate su PostgreSQL/PostGIS locale; APK su emulatore API 35. Il progetto Supabase remoto e il servizio Storage reale non sono stati configurati/collaudati in questa sessione. I test Auth HTTP usano risposte controllate; non rappresentano una registrazione remota effettuata.
+Migrazioni e autorizzazioni collaudate su PostgreSQL/PostGIS locale; APK su emulatore API 35. Il collegamento pubblico al progetto Supabase è stato verificato: Auth email con conferma attiva e policy versione 0.14 rispondono correttamente. I test Auth HTTP usano risposte controllate; registrazione/login reali e servizio Storage remoto restano da collaudare.
 
 Gli invii v0.13 ancora pendenti sono conservati e sospesi per recupero esplicito; non vengono inventate soglie GPS mancanti. Le foto sono disponibili offline dopo il primo download. La cache cartografica rimane 200 MiB, senza garanzia sulle aree mai visitate. Nessun collaudo fisico sul campo.
 

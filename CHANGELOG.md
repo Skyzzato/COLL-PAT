@@ -8,7 +8,8 @@
 - Storage foto privato con UUID stabili, GPS con soglie separate e qualità storica.
 - CSV semestrale tramite SAF, controllo versione server/cache, terzo collettore demo Via Gilli.
 - Migrazioni SQL additive e Room 3 per isolamento degli account; test SQL e Android.
-- Collaudo remoto e sul campo ancora da eseguire con la configurazione del progetto.
+- Ricompilazione nella stessa v0.14 con URL e publishable key preimpostati; confermate risposte remote Auth e versione minima, 50 test JVM demo e 13 Android rieseguiti.
+- Registrazione/accesso reali, Storage remoto e collaudo sul campo ancora da eseguire.
 
 ## v0.13 — COLL-PAT (prerelease)
 
