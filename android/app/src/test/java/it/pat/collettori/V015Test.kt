@@ -11,38 +11,37 @@ import java.util.zip.*
 
 class V015Test {
     private fun sample(second:Double,lat:Double=46.0,accuracy:Double?=5.0)=GpsSample((second*1e9).toLong(),lat,11.0,accuracy)
-    private fun window()=GpsWindow(0,10.0)
+    private fun window()=GpsWindow(0,20.0)
     private fun evidence(state:String="COMPATIBILE"):JSONObject {
-        val w=window();listOf(0.0,2.0,4.5).forEach{w.add(sample(it),5_000_000_000)}
-        return w.finish(5_000_000_000).put("id","event").put("inspection_id","visit").put("manhole_id","point").put("permission","PRECISE")
-            .put("applied_limits",JSONObject().put("max_accuracy_m",10).put("radius_m",20))
+        val w=window();listOf(3.0,5.0,7.5).forEach{w.add(sample(it),(it*1e9).toLong())}
+        return w.finish(8_000_000_000).put("id","event").put("inspection_id","visit").put("manhole_id","point").put("permission","PRECISE").put("mock",false)
+            .put("applied_limits",JSONObject().put("max_accuracy_m",20).put("radius_m",20))
             .put("local_evaluation",JSONObject().put("state",state).put("distance_m",if(state=="COMPATIBILE")0 else 50)).put("match_outcome","VERIFIED")
     }
     private fun inspection()=JSONObject().put("id","visit").put("manhole_id","point")
     private fun denied(block:()->Unit){try{block();fail("Operation unexpectedly accepted")}catch(_:IllegalArgumentException){}catch(_:IllegalStateException){}}
-    @Test fun preliminaryAccuracyAndFreshnessAreHardGates(){
-        assertNull(AcquisitionPolicy.validate(sample(1.0,accuracy=10.0),1_000_000_000,10.0))
-        assertTrue(AcquisitionPolicy.validate(sample(1.0,accuracy=10.1),1_000_000_000,10.0)!!.contains("insufficiente"))
-        listOf(null,Double.NaN,Double.POSITIVE_INFINITY,-1.0).forEach{assertNotNull(AcquisitionPolicy.validate(sample(1.0,accuracy=it),1_000_000_000,10.0))}
-        assertNotNull(AcquisitionPolicy.validate(null,1,10.0));assertFalse(AcquisitionPolicy.fresh(sample(1.0),12_000_000_000));assertFalse(AcquisitionPolicy.fresh(sample(1.0),0))
+    @Test fun qualityLimitsAreInclusiveAndRejectNonFiniteValues(){
+        assertNull(AcquisitionPolicy.validate(sample(1.0,accuracy=20.0),1_000_000_000,20.0))
+        assertNotNull(AcquisitionPolicy.validate(sample(1.0,accuracy=20.1),1_000_000_000,20.0))
+        listOf(null,Double.NaN,Double.POSITIVE_INFINITY,-1.0).forEach{assertNotNull(AcquisitionPolicy.validate(sample(1.0,accuracy=it),1_000_000_000,20.0))}
     }
-    @Test fun fiveSecondsProducesSpatialMeanAndConservativeAccuracy(){
-        val w=window();w.add(sample(0.0,46.0,4.0),0);w.add(sample(2.0,46.00002,10.0),2_000_000_000);w.add(sample(4.5,46.00004,6.0),4_500_000_000)
-        val e=w.finish(5_000_000_000);assertEquals(46.00002,e.getDouble("latitude"),1e-8);assertEquals(10.0,e.getDouble("accuracy_m"),0.0);assertEquals(3,e.getInt("sample_count"));assertTrue(e.getDouble("dispersion_m")>2)
+    @Test fun threeSecondsExcludedThenFiveUsefulSecondsWithArithmeticAccuracy(){
+        val w=window();w.add(sample(0.0,lat=0.0),0);w.add(sample(2.9,lat=0.0),3_500_000_000)
+        w.add(sample(3.0,46.0,4.0),3_000_000_000);w.add(sample(5.0,46.00002,10.0),5_000_000_000);w.add(sample(7.5,46.00004,7.0),7_500_000_000)
+        denied{w.finish(7_999_999_999)}
+        val e=w.finish(8_000_000_000);assertEquals(46.00002,e.getDouble("latitude"),1e-8);assertEquals(7.0,e.getDouble("accuracy_m"),0.0);assertEquals(3,e.getInt("sample_count"));assertTrue(e.getDouble("dispersion_m")>2)
     }
-    @Test fun oneSampleAndDuplicateCallbacksCannotMakeAnEvent(){val w=window();repeat(8){w.add(sample(4.0),4_500_000_000)};denied{w.finish(5_000_000_000)}}
-    @Test fun windowExcludesEarlierFutureInvalidAndOutOfOrderSamples(){val w=window();w.add(sample(-1.0),0);w.add(sample(9.0),0);w.add(sample(0.0),0);w.add(sample(2.0),2_000_000_000);w.add(sample(1.0),3_000_000_000);w.add(sample(3.0,lat=100.0),3_000_000_000);w.add(sample(4.5),4_500_000_000);assertEquals(3,w.finish(5_000_000_000).getInt("sample_count"))}
-    @Test fun tooShortSpanAndOldLastSampleFail(){val clustered=window();listOf(4.0,4.1,4.2).forEach{clustered.add(sample(it),5_000_000_000)};denied{clustered.finish(5_000_000_000)};val old=window();listOf(0.0,1.0,2.0).forEach{old.add(sample(it),5_000_000_000)};denied{old.finish(5_000_000_000)}}
-    @Test fun deteriorationAbortsAndCannotBeMaskedByPreviousSamples(){val w=window();listOf(0.0,2.0,4.0).forEach{w.add(sample(it),5_000_000_000)};w.add(sample(4.5,accuracy=11.0),4_500_000_000);assertNotNull(w.failure);denied{w.finish(5_000_000_000)}}
-    @Test fun compatibleEventAndMotivatedExceptionAreSeparate(){val e=evidence();validateNewEvidence(e,inspection());assertTrue(usableInspectionGps(e));val mismatch=evidence("NON_COMPATIBILE");denied{validateNewEvidence(mismatch,inspection())};assertFalse(usableInspectionGps(mismatch));mismatch.put("match_outcome","EXCEPTION").put("exception_reason"," ");denied{validateNewEvidence(mismatch,inspection())};mismatch.put("exception_reason","Accesso dal lato opposto");validateNewEvidence(mismatch,inspection());assertTrue(motivatedGpsException(mismatch));assertTrue(usableInspectionGps(mismatch));assertEquals("UNRELIABLE",gpsQuality(mismatch))}
-    @Test fun exceptionCannotOverrideAccuracyOrMoveToAnotherVisit(){val e=evidence("INCERTA").put("match_outcome","EXCEPTION").put("exception_reason","Motivo");e.put("accuracy_m",11);denied{validateNewEvidence(e,inspection())};e.put("accuracy_m",5).put("inspection_id","other");denied{validateNewEvidence(e,inspection())}}
-    @Test fun feedbackDeadlineIsIndependentOfServerAndBlockedByConflict(){
-        val v=Visit("visit","owner","point","pack",JSONObject().put("local_edit",7).toString(),sync="IN_ATTESA")
-        val f=SaveFeedback("visit",7,false,1000);assertEquals(2000,f.remaining(1000));assertEquals(1,f.remaining(2999));assertEquals(0,f.remaining(3000))
-        assertTrue(f.title(v).contains("in attesa"));assertFalse(f.serverConfirmed(v.copy(sync="RICEVUTO_SERVER")))
-        val ack=v.copy(sync="RICEVUTO_SERVER",receipt="{}");assertEquals("Ispezione salvata sul server",f.title(ack));assertEquals(500,f.remaining(2500));assertFalse(f.serverConfirmed(ack.copy(body="{\"local_edit\":8}")))
-        assertEquals("Bozza salvata",f.copy(draft=true).title(v));assertTrue(f.copy(draft=true).detail(ack).contains("utenti autorizzati"));assertFalse(f.mayReturn(v.copy(sync="CONFLICT")));assertFalse(f.mayReturn(v.copy(id="another")))
+    @Test fun duplicateLateInvalidAndMockCallbacksCannotCreateSamples(){
+        val w=window();w.add(sample(2.0),4_000_000_000);w.add(sample(4.0),8_000_000_000);w.add(sample(9.0),8_000_000_000);w.add(sample(4.0,lat=100.0),4_000_000_000)
+        listOf(3.0,5.0,7.5).forEach{w.add(sample(it),(it*1e9).toLong());w.add(sample(it),(it*1e9).toLong())}
+        w.add(sample(6.0).copy(mock=true),6_000_000_000)
+        assertEquals(3,w.finish(8_000_000_000).getInt("sample_count"))
     }
+    @Test fun poorerFixIsIncludedWithoutAbortingOrImprovingMean(){val w=window();listOf(3.0,5.0,7.5).forEach{w.add(sample(it,accuracy=if(it==5.0)100.0 else 10.0),(it*1e9).toLong())};assertNull(w.failure);assertEquals(40.0,w.finish(8_000_000_000).getDouble("accuracy_m"),0.0)}
+    @Test fun tooShortSpanAndOldLastSampleFail(){val w=window();listOf(3.0,3.1,3.2).forEach{w.add(sample(it),(it*1e9).toLong())};denied{w.finish(8_000_000_000)}}
+    @Test fun verifiedPositionCannotBeReplacedByAnException(){val e=evidence();validateNewEvidence(e,inspection());assertTrue(usableInspectionGps(e));val mismatch=evidence("NON_COMPATIBILE").put("match_outcome","EXCEPTION").put("exception_reason","Motivo");denied{validateNewEvidence(mismatch,inspection())};assertFalse(usableInspectionGps(mismatch))}
+    @Test fun rejectsForgedMeanAndWrongInspection(){val e=evidence().put("accuracy_m",1);denied{validateNewEvidence(e,inspection())};denied{validateNewEvidence(evidence().put("inspection_id","other"),inspection())}}
+    @Test fun feedbackRequiresMatchingReceiptAndRetainsConflict(){val v=Visit("visit","owner","point","pack","{\"local_edit\":7}",sync="IN_ATTESA");val f=SaveFeedback("visit",7,false,1000);assertFalse(f.serverConfirmed(v));assertTrue(f.serverConfirmed(v.copy(sync="RICEVUTO_SERVER",receipt="{}")));assertFalse(f.mayReturn(v.copy(sync="CONFLICT")))}
 
     private fun zip(cpg:String?=null,driver:Int=0,encoding:String="UTF-8",text:String="Città è più",ids:List<String> = listOf("01","abc","003")):ByteArray{
         val out=ByteArrayOutputStream()

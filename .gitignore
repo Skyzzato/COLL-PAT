@@ -21,3 +21,5 @@ android/local.properties
 *.jks
 *.keystore
 local-output/
+
+**/build-v021/

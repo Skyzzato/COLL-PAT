@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.21 — ciclo di vita, GPS e lavoro offline (prerelease)
+
+- Eliminazione definitiva con ambito confermato, tombstone tecnici, ricevute senza payload eliminati e pulizia allegati riprendibile; reimportazione della stessa sorgente con nuovo ciclo UUID.
+- Importazione di punti ordinati con guida in assenza di ordine, personalizzazione gerarchica, codici collettore distribuiti lungo le geometrie e selezione coordinate sulla mappa.
+- GPS v2: 3 secondi esclusi, almeno 5 utili, media delle accuratezze, validazione dei campioni SQL/Android e mancato rilievo motivato senza coordinate.
+- Note unificate, aiuti contestuali, sicurezza coerente e condizione sotto asfalto persistente con RPC a privilegi limitati.
+- Errori HTTP distinti dalla rete; refresh coordinato, timestamp separati, fotografie pendenti e coda per elementi logici; riepiloghi chiusi esplicitamente.
+- Migrazioni 008/009 additive e procedura di pulizia separata. Room 3 invariata, APK 0.21/build 21, stessa firma.
+- Le operazioni amministrative remote non sono state eseguite: dettagli in MIGRATIONS-v0.21 e VALIDATION-v0.21.
+
+
 ## v0.2 — importazione e gestione completa del catalogo (pre-release)
 
 - Colonne identificative con esempi, chiavi composte e registro persistente delle corrispondenze per dati privi di chiavi affidabili; riconciliazione esplicita dei record modificati.

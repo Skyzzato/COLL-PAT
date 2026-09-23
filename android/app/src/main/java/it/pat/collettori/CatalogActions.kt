@@ -85,3 +85,14 @@ fun deletionImpact(id:String,items:List<CatalogItem>,visits:List<Visit>,photoCou
     val exclusive=children.filter{JSONObject(it.body).memberships().all{c->c==id}}.map{it.id}.toSet()
     return CollectorDeletion(id,exclusive+id,children.map{it.id}.toSet()-exclusive,children.count{it.kind=="point"},children.count{it.kind=="segment"},visits.count{it.manholeId in children.map{c->c.id}},photoCount)
 }
+
+fun updateSchematicSegments(changes:List<CatalogItem>,existing:List<CatalogItem>):List<CatalogItem>{
+    val supplied=changes.map{it.id}.toSet();val points=(existing+changes).filter{it.kind=="point"}.associate{it.id to JSONObject(it.body)}
+    val moved=changes.filter{it.kind=="point"}.map{it.id}.toSet()
+    val adjusted=existing.filter{it.kind=="segment"&&it.id !in supplied}.mapNotNull{item->val s=JSONObject(item.body)
+        if(!s.optBoolean("schematic")||s.optString("from_id") !in moved&&s.optString("to_id") !in moved)return@mapNotNull null
+        val a=points[s.optString("from_id")]?:return@mapNotNull null;val b=points[s.optString("to_id")]?:return@mapNotNull null
+        val geom=JSONObject().put("type","LineString").put("coordinates",JSONArray(listOf(listOf(a.getDouble("longitude"),a.getDouble("latitude")),listOf(b.getDouble("longitude"),b.getDouble("latitude")))))
+        s.put("geometry",geom).put("length_m",geometryLength(geom));item.copy(body=s.toString())
+    };return changes+adjusted
+}

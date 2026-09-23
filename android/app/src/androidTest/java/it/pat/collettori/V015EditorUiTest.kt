@@ -71,35 +71,30 @@ class V015EditorUiTest {
         }
         repo.store.clear();repo.db.close();context.deleteDatabase("$name.db")
     }
-    @Test fun draftConfirmationRemainsTwoSecondsAndReturnsOnlyOnce(){withEditor{repo,v,returns->
-        val save=reveal("Salva bozza");val clicked=SystemClock.elapsedRealtime();assertTrue(save.performAction(AccessibilityNodeInfo.ACTION_CLICK));save.performAction(AccessibilityNodeInfo.ACTION_CLICK);waitFor("Bozza salvata")
-        assertEquals(0,returns());waitFor("Pagina precedente · filtro Gilli");assertTrue("Navigation must wait for durable save and feedback deadline",SystemClock.elapsedRealtime()-clicked>=SaveFeedback.DISPLAY_MS)
-        Thread.sleep(300);assertEquals(1,returns());assertEquals("BOZZA",runBlocking{repo.dao.visit(v.id,v.owner)!!.operational});assertEquals(2L,runBlocking{JSONObject(repo.dao.visit(v.id,v.owner)!!.body).getLong("local_edit")})
+    @Test fun draftConfirmationWaitsForCloseAndReturnsOnlyOnce(){withEditor{repo,v,returns->
+        val save=reveal("Salva bozza");assertTrue(save.performAction(AccessibilityNodeInfo.ACTION_CLICK));save.performAction(AccessibilityNodeInfo.ACTION_CLICK);waitFor("Bozza salvata")
+        Thread.sleep(2300);assertEquals(0,returns());click("Chiudi");waitFor("Pagina precedente · filtro Gilli");Thread.sleep(300);assertEquals(1,returns());assertEquals("BOZZA",runBlocking{repo.dao.visit(v.id,v.owner)!!.operational})
     }}
-    @Test fun manualBackCancelsScheduledNavigation(){withEditor{_,_,returns->
-        click("Salva bozza");waitFor("Bozza salvata");click("Torna ora");waitFor("Pagina precedente · filtro Gilli");Thread.sleep(2300);assertEquals(1,returns())
+    @Test fun explicitCloseNeverTriggersSecondNavigation(){withEditor{_,_,returns->
+        click("Salva bozza");waitFor("Bozza salvata");click("Chiudi");waitFor("Pagina precedente · filtro Gilli");Thread.sleep(2300);assertEquals(1,returns())
     }}
-    @Test fun mismatchDialogFocusAndExplicitReasonDoNotSaveEarly(){
+    @Test fun mismatchHasNoCoordinatesAndReasonNeedsConfirmation(){
         inst.uiAutomation.grantRuntimePermission(context.packageName,Manifest.permission.ACCESS_FINE_LOCATION)
         inst.uiAutomation.grantRuntimePermission(context.packageName,Manifest.permission.ACCESS_COARSE_LOCATION)
         withEditor{repo,v,_->
-            click("Rileva posizione");waitFor("Corrispondenza GPS non verificata");awaitEvents(repo,v,0)
-            click("Annulla");awaitEvents(repo,v,0);click("Rileva posizione");waitFor("Corrispondenza GPS non verificata")
-            click("Continua con eccezione");waitFor("Eccezione GPS");Thread.sleep(400)
-            val edit=all().first{it.isEditable&&it.isFocused};assertTrue(edit.isVisibleToUser)
-            val confirm=reveal("Conferma registrazione con eccezione");assertFalse(confirm.isEnabled);awaitEvents(repo,v,0)
-            assertTrue(edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply{putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,"Codice verificato sul posto")}))
-            Thread.sleep(250);click("Conferma registrazione con eccezione");awaitEvents(repo,v,1)
-            val event=runBlocking{lastEvidence(JSONObject(repo.dao.visit(v.id,v.owner)!!.body))!!}
-            assertTrue(usableInspectionGps(event));assertEquals("EXCEPTION",event.getString("match_outcome"));assertEquals("Codice verificato sul posto",event.getString("exception_reason"))
-            click("Registra Ispezione");waitFor("Ispezione salvata in locale — in attesa di sincronizzazione");waitFor("Pagina precedente · filtro Gilli")
+            click("Rileva posizione");waitFor("Non rilevare GPS");awaitEvents(repo,v,0)
+            click("Non rilevare GPS");waitFor("Motivazione non rilievo GPS");click("ANNULLA");assertFalse(runBlocking{noGpsConfirmed(JSONObject(repo.dao.visit(v.id,v.owner)!!.body))})
+            click("Non rilevare GPS");waitFor("Motivazione non rilievo GPS")
+            val edit=all().first{it.isEditable};assertFalse(reveal("OK").isEnabled)
+            assertTrue(edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply{putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,"Nessun rilievo utilizzabile")}))
+            click("OK");Thread.sleep(250);assertTrue(runBlocking{noGpsConfirmed(JSONObject(repo.dao.visit(v.id,v.owner)!!.body))});awaitEvents(repo,v,0)
+            click("Rileva posizione");waitFor("Non rilevare GPS");assertFalse(runBlocking{noGpsConfirmed(JSONObject(repo.dao.visit(v.id,v.owner)!!.body))})
         }
     }
-    @Test fun matchingReceiptUpdatesDraftNoticeWithoutRestartingTimer(){withEditor{repo,v,returns->
-        click("Salva bozza");waitFor("Bozza salvata");val started=SystemClock.elapsedRealtime()
-        runBlocking{delay(450);val current=repo.dao.visit(v.id,v.owner)!!;repo.dao.save(current.copy(sync="RICEVUTO_SERVER",receipt="{\"operation_id\":\"controlled-receipt\"}"))}
-        waitFor("Sul server — disponibile agli utenti autorizzati");assertEquals(0,returns())
-        waitFor("Pagina precedente · filtro Gilli");assertTrue(SystemClock.elapsedRealtime()-started<2400)
+    @Test fun matchingReceiptUpdatesNoticeButStillWaitsForClose(){withEditor{repo,v,returns->
+        click("Salva bozza");waitFor("Bozza salvata")
+        runBlocking{val current=repo.dao.visit(v.id,v.owner)!!;repo.dao.save(current.copy(sync="RICEVUTO_SERVER",receipt="{\"operation_id\":\"controlled-receipt\"}"))}
+        waitFor("Sul server — disponibile agli utenti autorizzati");Thread.sleep(2300);assertEquals(0,returns());click("Chiudi");waitFor("Pagina precedente · filtro Gilli")
     }}
     @Test fun cancelledAcquisitionDoesNotCreateGhostEvents(){
         inst.uiAutomation.grantRuntimePermission(context.packageName,Manifest.permission.ACCESS_FINE_LOCATION)

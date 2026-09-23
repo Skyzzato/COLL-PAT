@@ -20,10 +20,12 @@ import org.json.JSONObject
 
 
 @Composable
-fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position:JSONObject?,center:Pair<LatLng,Int>?,modifier:Modifier,onSelect:(String)->Unit,onError:(String)->Unit,bounds:List<LatLng> = emptyList(),boundsTick:Int=0,settings:FieldSettings=FieldSettings()){
+fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position:JSONObject?,center:Pair<LatLng,Int>?,modifier:Modifier,onSelect:(String)->Unit,onError:(String)->Unit,bounds:List<LatLng> = emptyList(),boundsTick:Int=0,settings:FieldSettings=FieldSettings(),onCoordinate:((LatLng)->Unit)?=null,onCollector:((String)->Unit)?=null){
     val context=LocalContext.current
     val owner=LocalLifecycleOwner.current
     val select by rememberUpdatedState(onSelect)
+    val coordinate by rememberUpdatedState(onCoordinate)
+    val collector by rememberUpdatedState(onCollector)
     val error by rememberUpdatedState(onError)
     val view=remember{MapLibre.getInstance(context);MapView(context).apply{onCreate(null)}}
     var map by remember{mutableStateOf<MapLibreMap?>(null)}
@@ -31,7 +33,14 @@ fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position
     var cameraLon by rememberSaveable{mutableStateOf<Double?>(null)}
     var cameraZoom by rememberSaveable{mutableStateOf<Double?>(null)}
     var positioned by remember{mutableStateOf(false)}
-    val style=remember(pack,points,selected,position,settings){localStyle(pack,points,selected,position,settings)}
+    val picking=onCoordinate!=null
+    val style=remember(pack,points,selected,position,settings,picking){
+        val json=JSONObject(localStyle(pack,points,selected,position,settings))
+        if(picking){
+            val layers=json.getJSONArray("layers").objects().filter{it.optString("id") !in setOf("manholes","labels","selected-ring")}
+            json.put("layers",org.json.JSONArray(layers).put(JSONObject("""{"id":"coordinate-flag","type":"symbol","source":"points","layout":{"icon-image":"coordinate-flag","icon-anchor":"bottom","icon-size":1,"icon-allow-overlap":true}}""")))
+        };json.toString()
+    }
     val latestStyle by rememberUpdatedState(style)
     var styleReady by remember{mutableStateOf(false)}
     val sourceCache=remember{mutableMapOf<String,String>()}
@@ -43,13 +52,24 @@ fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position
         view.getMapAsync{m->map=m;m.uiSettings.isAttributionEnabled=pack.optBoolean("osm");m.uiSettings.isLogoEnabled=false
             if(cameraLat!=null&&cameraLon!=null&&cameraZoom!=null){m.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(cameraLat!!,cameraLon!!),cameraZoom!!));positioned=true}
             m.addOnCameraIdleListener{if(positioned){cameraLat=m.cameraPosition.target?.latitude;cameraLon=m.cameraPosition.target?.longitude;cameraZoom=m.cameraPosition.zoom}}
-            m.addOnMapClickListener{ll->val px=m.projection.toScreenLocation(ll);val hits=m.queryRenderedFeatures(RectF(px.x-20,px.y-20,px.x+20,px.y+20),"manholes")
-                if(hits.size==1)select(hits.first().getStringProperty("id"))else if(hits.size>1)error("Più pozzetti in questo punto: aumentare lo zoom o selezionare dall'elenco.");true}
+            m.addOnMapClickListener{ll->coordinate?.let{it(ll);return@addOnMapClickListener true};val px=m.projection.toScreenLocation(ll);val hits=m.queryRenderedFeatures(RectF(px.x-20,px.y-20,px.x+20,px.y+20),"manholes")
+                if(hits.size==1)select(hits.first().getStringProperty("id"))else if(hits.size>1)error("Più pozzetti in questo punto: aumentare lo zoom o selezionare dall'elenco.")
+                else{val pipes=m.queryRenderedFeatures(RectF(px.x-12,px.y-12,px.x+12,px.y+12),"pipes").map{it.getStringProperty("collector_id")}.filter{it.isNotBlank()}.distinct();if(pipes.size==1)collector?.invoke(pipes.single())else if(pipes.size>1)error("Più collettori in questo punto: seleziona dall’elenco.")};true}
         }
         onDispose{owner.lifecycle.removeObserver(lifecycle);view.onPause();view.onStop();view.onDestroy()}
     }
     LaunchedEffect(map){map?.let{m->
         val builder=Style.Builder().fromJson(latestStyle)
+        val flag=Bitmap.createBitmap(48,64,Bitmap.Config.ARGB_8888).apply{density=android.util.DisplayMetrics.DENSITY_DEFAULT}
+        android.graphics.Canvas(flag).apply{
+            val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            paint.color=android.graphics.Color.WHITE;paint.strokeWidth=7f;drawLine(24f,4f,24f,63f,paint)
+            paint.color=android.graphics.Color.rgb(75,49,132);paint.strokeWidth=4f;drawLine(24f,4f,24f,63f,paint)
+            val path=android.graphics.Path().apply{moveTo(24f,5f);lineTo(46f,5f);lineTo(40f,16f);lineTo(46f,27f);lineTo(24f,27f);close()}
+            paint.style=android.graphics.Paint.Style.STROKE;paint.strokeWidth=3f;paint.color=android.graphics.Color.WHITE;drawPath(path,paint)
+            paint.style=android.graphics.Paint.Style.FILL;paint.color=android.graphics.Color.rgb(75,49,132);drawPath(path,paint)
+        }
+        builder.withImage("coordinate-flag",flag,false)
         ManholeSymbol.entries.forEach{symbol->
             val bitmap=Bitmap.createBitmap(symbol.sdfPixels(),ManholeSymbol.PIXELS,ManholeSymbol.PIXELS,Bitmap.Config.ARGB_8888)
             bitmap.density=android.util.DisplayMetrics.DENSITY_DEFAULT
@@ -68,7 +88,7 @@ fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position
         val styleMap=map?.style
         listOf("manholes","labels","candidate-ring","selected-ring","asphalt-mark").forEach{styleMap?.getLayer(it)?.minZoom=settings.minZoomPozzetti}
         styleMap?.getLayerAs<org.maplibre.android.style.layers.SymbolLayer>("manholes")?.setProperties(
-            org.maplibre.android.style.layers.PropertyFactory.iconImage(ManholeSymbol.fromId(settings.symbol).imageId),
+            org.maplibre.android.style.layers.PropertyFactory.iconImage(org.maplibre.android.style.expressions.Expression.get("symbol")),
             org.maplibre.android.style.layers.PropertyFactory.iconSize((settings.iconSize/ManholeSymbol.RADIUS).toFloat()))
         styleMap?.getLayerAs<org.maplibre.android.style.layers.CircleLayer>("candidate-ring")?.setProperties(org.maplibre.android.style.layers.PropertyFactory.circleRadius(settings.iconSize+8f))
         styleMap?.getLayerAs<org.maplibre.android.style.layers.CircleLayer>("selected-ring")?.setProperties(org.maplibre.android.style.layers.PropertyFactory.circleRadius(settings.iconSize+5f))

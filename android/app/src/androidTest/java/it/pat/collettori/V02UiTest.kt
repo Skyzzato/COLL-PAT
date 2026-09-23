@@ -67,7 +67,7 @@ class V02UiTest {
         val pack=runBlocking{installTestCatalog(repo)};val data=JSONObject(pack.body)
         try{ActivityScenario.launch(MainActivity::class.java).use{scenario->
             scenario.onActivity{a->a.setContent{MaterialTheme{CompositionLocalProvider(LocalDensity provides Density(1f,1.5f)){Box(Modifier.width(320.dp).fillMaxHeight()){AppLoading("") {}}}}}}
-            waitFor("v0.2 · build 17");inst.waitForIdleSync();screenshot("loading-320-font150.png")
+            waitFor("v0.21 · build 21");inst.waitForIdleSync();screenshot("loading-320-font150.png")
             val vector=context.getDrawable(R.drawable.brand_name)!!;val bitmap=android.graphics.Bitmap.createBitmap(440,160,android.graphics.Bitmap.Config.ARGB_8888);vector.setBounds(0,0,440,160);vector.draw(android.graphics.Canvas(bitmap));File(context.filesDir,"verification-v02/brand-vector.png").outputStream().use{bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()
             val splash=context.getDrawable(R.drawable.splash)!!;val splashBitmap=android.graphics.Bitmap.createBitmap(320,640,android.graphics.Bitmap.Config.ARGB_8888);splash.setBounds(0,0,320,640);splash.draw(android.graphics.Canvas(splashBitmap));File(context.filesDir,"verification-v02/splash-vector.png").outputStream().use{splashBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};splashBitmap.recycle()
             scenario.onActivity{a->a.setContent{MaterialTheme{CompositionLocalProvider(LocalDensity provides Density(1f,1.5f)){Box(Modifier.width(320.dp).fillMaxHeight()){CollectorList(data.getJSONArray("collectors").objects(),emptySet(),"Catalogo test",rememberLazyListState(),{},{_,_->},{},{},data,emptyMap(),repo){}}}}}}

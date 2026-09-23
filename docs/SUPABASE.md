@@ -1,5 +1,11 @@
 # Supabase — COLL-PAT v0.2
 
+## Aggiornamento v0.21
+
+Le nuove migrazioni 008 e 009 e la pulizia separata sono descritte in [MIGRATIONS-v0.21](MIGRATIONS-v0.21.md). Sono state applicate solo in test locale. Le policy DELETE/SELECT per gli allegati autorizzano esclusivamente i lavori di cancellazione confermati dal progetto.
+
+## Documentazione delle versioni precedenti
+
 Android usa direttamente Supabase Auth, RPC HTTPS e Storage. FastAPI rimane per compatibilità storica. Lo stato delle migrazioni locali e remote effettivamente applicate è riportato in [VALIDATION-v0.2](VALIDATION-v0.2.md).
 
 Per aggiornare dalla v0.16 applicare `202609230007_coll_pat_v02.sql`: introduce la cancellazione con autorizzazione admin e ricevute, protegge identità eliminate, verifica i successivi e registra l'ordine di pubblicazione 0.2 successivo a 0.16. Lo script è transazionale e ripetibile; l'applicazione non cancella record operativi. Dopo pubblicazione dell'APK impostare latest a **0.2**, mantenendo minimum **0.14**. Non occorre ripetere il seed 006.

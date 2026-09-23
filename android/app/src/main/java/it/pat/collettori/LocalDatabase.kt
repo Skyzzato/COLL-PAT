@@ -53,7 +53,7 @@ interface PilotDao {
     @Query("SELECT * FROM visits WHERE owner=:owner ORDER BY rowid DESC") suspend fun visitsNow(owner:String):List<Visit>
     @Query("SELECT * FROM visits WHERE id=:id AND owner=:owner") suspend fun visit(id:String,owner:String):Visit?
     @Upsert suspend fun save(visit:Visit)
-    @Query("SELECT "+PENDING_COLUMNS+" FROM outbox WHERE owner=:owner AND state IN ('IN_ATTESA','IN_CORSO') ORDER BY CASE WHEN kind IN ('catalog','catalog_chunk') THEN 0 WHEN kind='catalog_delete' THEN 2 ELSE 1 END, rowid") suspend fun pendingRows(owner:String):List<Pending>
+    @Query("SELECT "+PENDING_COLUMNS+" FROM outbox WHERE owner=:owner AND state IN ('IN_ATTESA','IN_CORSO') ORDER BY CASE WHEN kind='permanent_delete' THEN 0 WHEN kind IN ('catalog','catalog_chunk') THEN 1 WHEN kind='object_patch' THEN 2 ELSE 3 END, rowid") suspend fun pendingRows(owner:String):List<Pending>
     @Transaction suspend fun pending(owner:String)=completeQueue(pendingRows(owner))
     @Query("UPDATE outbox SET state='IN_ATTESA', error=NULL WHERE owner=:owner AND state='AUTH_REQUIRED' AND payloadVersion=2 AND generation>=0") suspend fun resumeAuth(owner:String)
     @Query("UPDATE outbox SET state='AUTH_REQUIRED' WHERE owner=:owner AND state IN ('IN_ATTESA','IN_CORSO')") suspend fun pauseAuth(owner:String)
@@ -93,6 +93,9 @@ interface PilotDao {
     @Query("SELECT * FROM audit WHERE owner=:owner AND visitId=:id ORDER BY at") suspend fun audits(owner:String,id:String):List<Audit>
     @Upsert suspend fun saveImport(item:ImportRecord)
     @Query("SELECT * FROM imports WHERE owner=:owner") suspend fun imports(owner:String):List<ImportRecord>
+    @Query("DELETE FROM visits WHERE owner=:owner AND id=:id") suspend fun removeVisit(owner:String,id:String)
+    @Query("DELETE FROM audit WHERE owner=:owner AND visitId=:id") suspend fun removeAudit(owner:String,id:String)
+    @Query("DELETE FROM imports WHERE owner=:owner AND id=:id") suspend fun removeImport(owner:String,id:String)
     @Query("DELETE FROM visits WHERE owner=:owner") suspend fun clearVisits(owner:String)
     @Query("DELETE FROM audit WHERE owner=:owner") suspend fun clearAudit(owner:String)
     @Query("DELETE FROM outbox WHERE owner=:owner AND kind NOT IN ('catalog','catalog_chunk','catalog_delete')") suspend fun clearInspectionQueue(owner:String)

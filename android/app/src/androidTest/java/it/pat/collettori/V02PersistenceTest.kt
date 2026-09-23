@@ -22,12 +22,15 @@ class V02PersistenceTest {
         val client=OkHttpClient.Builder().addInterceptor{chain->
             val req=chain.request();val buf=Buffer();req.body?.writeTo(buf);val args=if(buf.size>0)JSONObject(buf.readUtf8())else JSONObject();var status=200
             val response=when(req.url.encodedPath.substringAfterLast('/')){
+                "coll_pat_deleted"->JSONObject().put("items",JSONArray(deleted))
+                "coll_pat_storage_pending"->JSONObject().put("items",JSONArray())
+                "coll_pat_deletion_preview"->{val id=args.getString("p_id");val removed=items.values.filter{it.getJSONObject("data").let{b->b.getString("id")==id||b.memberships()==listOf(id)}}.map{it.getJSONObject("data").getString("id")}.sorted();val shared=items.values.filter{id in it.getJSONObject("data").memberships()&&it.getJSONObject("data").getString("id") !in removed}.map{it.getJSONObject("data").getString("id")}.sorted();JSONObject().put("id",id).put("kind",args.getString("p_kind")).put("removed",JSONArray(removed)).put("shared",JSONArray(shared)).put("inspections",JSONArray()).put("photos",JSONArray()).put("verified",true)}
                 "coll_pat_version"->JSONObject().put("minimum_supported_version","0.14").put("latest_version","0.2")
                 "coll_pat_status"->JSONObject().put("generation",0).put("role",role)
                 "coll_pat_catalog"->JSONObject().put("items",JSONArray(items.values.filter{stale||deleted.none{d->d.getString("id")==it.getJSONObject("data").getString("id")}})).put("archived",JSONArray()).put("deleted",JSONArray(deleted)).put("has_more",false).put("revision",1)
                 "coll_pat_history","coll_pat_inspection_summary"->{historyCalls++;if(historyError)status=503;JSONObject().put("items",JSONArray()).put("has_more",false).put("next",JSONObject.NULL)}
                 "coll_pat_apply"->{val op=args.getJSONObject("operation");val p=op.getJSONObject("payload");p.getJSONArray("items").objects().forEach{row->items[row.getJSONObject("data").getString("id")]=row};receipt(op)}
-                "coll_pat_delete_collector"->{val op=args.getJSONObject("operation");val id=op.getJSONObject("payload").getString("id");items.values.filter{it.getJSONObject("data").let{p->p.getString("id")==id||p.memberships()==listOf(id)}}.forEach{deleted.add(JSONObject().put("id",it.getJSONObject("data").getString("id")).put("kind",it.getString("kind")).put("deleted",true))};receipt(op)}
+                "coll_pat_delete_permanent"->{val op=args.getJSONObject("operation");val id=op.getJSONObject("payload").getString("id");items.values.filter{it.getJSONObject("data").let{p->p.getString("id")==id||p.memberships()==listOf(id)}}.forEach{deleted.add(JSONObject().put("id",it.getJSONObject("data").getString("id")).put("kind",it.getString("kind")).put("deleted",true))};receipt(op)}
                 else->error("Unexpected request "+req.url.encodedPath)
             }
             Response.Builder().request(req).protocol(Protocol.HTTP_1_1).code(status).message("contract").body(response.toString().toResponseBody("application/json".toMediaType())).build()
@@ -61,7 +64,7 @@ class V02PersistenceTest {
     }
     @Test fun neverSentCollectorIsActuallyRemovedTogetherWithItsQueue()=runBlocking{
         val name="v02-local-${UUID.randomUUID()}";val r=repo(name,Server())
-        try{initialize(r);val created=items(r);r.saveCatalog(created);assertTrue(r.deleteCollector(created.first().id));assertTrue(r.dao.catalogNow(r.owner()).isEmpty());assertTrue(r.dao.allPending(r.owner()).isEmpty());assertEquals(0,r.localCatalog()!!.getJSONArray("points").length())}
+        try{initialize(r);val created=items(r);r.saveCatalog(created);assertFalse(r.deleteCollector(created.first().id));assertTrue(r.dao.catalogNow(r.owner()).isEmpty());assertEquals("permanent_delete",r.dao.allPending(r.owner()).single().kind);assertEquals(0,r.localCatalog()!!.getJSONArray("points").length())}
         finally{r.store.clear();r.db.close();context.deleteDatabase("$name.db")}
     }
     @Test fun refreshTimestampOnlyChangesAfterBothCatalogAndInspectionsSucceed()=runBlocking{
@@ -91,7 +94,7 @@ class V02PersistenceTest {
             r.saveCatalog(rows);assertTrue(r.dao.allPending(r.owner()).any{it.kind=="catalog_chunk"})
             assertEquals(4,r.localCatalog()!!.getJSONArray("points").length())
             assertTrue(r.dao.settingsNow(r.owner()).any{it.key.startsWith("catalog-upload:")&&it.value.length>4*1024*1024})
-            assertTrue(r.deleteCollector(first.first().id))
+            assertFalse(r.deleteCollector(first.first().id))
             val queue=r.dao.allPending(r.owner());assertTrue(queue.any{it.kind=="catalog_chunk"});assertEquals(3,r.dao.catalogNow(r.owner()).size)
             val final=queue.single{it.kind=="catalog"};val payload=JSONObject(r.dao.settingValue(r.owner(),"catalog-upload:"+final.operationId)!!)
             assertEquals(second.map{it.id}.toSet(),payload.getJSONArray("items").objects().map{it.getJSONObject("data").getString("id")}.toSet())
@@ -105,7 +108,7 @@ class V02PersistenceTest {
             val other=collectorDefaults(UUID.randomUUID().toString(),"OTHER","Altro collettore")
             r.saveCatalog(listOf(CatalogItem(r.owner(),other.getString("id"),"collector",other.toString()))+created)
             val shared=created.last().let{it.copy(body=JSONObject(it.body).put("collectors",JSONArray(listOf(first,other.getString("id")))).toString())}
-            r.saveCatalog(listOf(shared));assertTrue(r.deleteCollector(first));assertTrue(r.sync())
+            r.saveCatalog(listOf(shared));assertFalse(r.deleteCollector(first));assertTrue(r.sync())
             assertEquals(listOf(other.getString("id")),server.items.getValue(shared.id).getJSONObject("data").memberships())
             assertFalse(server.items.containsKey(first));assertTrue(r.dao.allPending(r.owner()).isEmpty())
         }finally{r.store.clear();r.db.close();context.deleteDatabase("$name.db")}

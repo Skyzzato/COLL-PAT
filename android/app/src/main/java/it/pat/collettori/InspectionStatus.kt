@@ -49,9 +49,9 @@ fun compareVersions(a:String,b:String):Int {
     for(i in 0 until maxOf(aa.size,bb.size)){if(i>=aa.size)return -1;if(i>=bb.size)return 1;val an=aa[i].toIntOrNull();val bn=bb[i].toIntOrNull();val n=when{an!=null&&bn!=null->an.compareTo(bn);an!=null->-1;bn!=null->1;else->aa[i].compareTo(bb[i])};if(n!=0)return n};return 0
 }
 
-data class FieldSettings(val minZoomPozzetti:Float=14f,val iconSize:Float=7f,val symbol:String="CIRCLE",val asphalt:Boolean=true,val maxDistance:Double=20.0,val maxAccuracy:Double=15.0){
-    fun json()=JSONObject().put("zoom",minZoomPozzetti.toDouble()).put("size",iconSize.toDouble()).put("symbol",symbol).put("asphalt",asphalt).put("distance",maxDistance).put("accuracy",maxAccuracy)
-    companion object{fun parse(b:JSONObject)=FieldSettings(b.optDouble("zoom",14.0).coerceIn(8.0,20.0).toFloat(),b.optDouble("size",7.0).coerceIn(4.0,14.0).toFloat(),ManholeSymbol.fromId(b.optString("symbol","CIRCLE")).name,b.optBoolean("asphalt",true),b.optDouble("distance",20.0).coerceIn(1.0,100.0),b.optDouble("accuracy",15.0).coerceIn(1.0,50.0))}
+data class FieldSettings(val minZoomPozzetti:Float=14f,val iconSize:Float=7f,val symbol:String="CIRCLE",val asphalt:Boolean=true,val maxDistance:Double=20.0,val maxAccuracy:Double=20.0,val lineColor:String=DEFAULT_COLLECTOR_COLOR,val lineWidth:Int=4){
+    fun json()=JSONObject().put("zoom",minZoomPozzetti.toDouble()).put("size",iconSize.toDouble()).put("symbol",symbol).put("asphalt",asphalt).put("distance",maxDistance).put("accuracy",maxAccuracy).put("line_color",lineColor).put("line_width",lineWidth)
+    companion object{fun parse(b:JSONObject)=FieldSettings(b.optDouble("zoom",14.0).coerceIn(8.0,20.0).toFloat(),b.optDouble("size",7.0).coerceIn(4.0,14.0).toFloat(),ManholeSymbol.fromId(b.optString("symbol","CIRCLE")).name,b.optBoolean("asphalt",true),normalizeThreshold(b.optDouble("distance",20.0),DISTANCE_STEPS),normalizeThreshold(b.optDouble("accuracy",20.0),ACCURACY_STEPS),b.optString("line_color",DEFAULT_COLLECTOR_COLOR).takeIf{it.matches(Regex("#[0-9a-fA-F]{6}"))}?:DEFAULT_COLLECTOR_COLOR,b.optInt("line_width",4).coerceIn(1,10))}
 }
 fun acceptableMeasure(value:Double?,limit:Double)=value!=null&&value.isFinite()&&value>=0&&value<=limit
 fun gpsQuality(event:JSONObject?):String {
@@ -63,12 +63,25 @@ fun gpsQuality(event:JSONObject?):String {
     if(!acceptableMeasure(event.optJSONObject("local_evaluation")?.numberOrNull("distance_m"),limits?.optDouble("radius_m",20.0)?:20.0))return "UNRELIABLE"
     return "RELIABLE"
 }
+val ACCURACY_STEPS=listOf(20.0,40.0,60.0,80.0,100.0,120.0,140.0,150.0)
+val DISTANCE_STEPS=listOf(5.0,10.0,15.0,20.0,25.0,30.0)
+fun normalizeThreshold(value:Double,steps:List<Double>)=steps.lastOrNull{it<=value}?:steps.first()
 fun friendlyError(e:Exception):String=when{
-    e is ApiError&&e.code==401->"Sessione scaduta. Accedi nuovamente per sincronizzare; i dati locali sono conservati."
-    e is ApiError&&e.code==403->"Account non autorizzato per questo progetto. Contatta il responsabile."
-    e is ApiError&&e.code==409->"La bozza o i dati sono stati aggiornati da un altro dispositivo. Le tue modifiche sono conservate: apri la scheda per risolvere il conflitto."
-    e is ApiError&&e.code==426->"Versione dell’app non più supportata. Installa l’aggiornamento."
-    e is java.io.IOException->"Server non disponibile. Il lavoro è conservato sul telefono; riprova quando torna la rete."
+    e is ApiError->when{
+        e.code==401->"Sessione scaduta. Accedi nuovamente; i dati locali sono conservati."
+        e.code==403->"Operazione non autorizzata per questo account/progetto."
+        e.serverCode in setOf("PGRST202","PGRST204","42883","42P01")||e.code==404->"Contratto server o risorsa non disponibile. Verificare le migrazioni del progetto."
+        e.code==400||e.code==422->"Il server ha rifiutato i dati. Verificare la scheda e il contratto server."
+        e.code==409->"Conflitto: dati o ambito di eliminazione cambiati. Le operazioni pendenti richiedono una verifica."
+        e.code==426->"Versione dell’app non più supportata. Installa l’aggiornamento."
+        e.code==429->"Limite di richieste raggiunto. Riprova più tardi."
+        e.code==408->"Tempo di risposta scaduto. La ricevuta verrà verificata al prossimo invio."
+        e.code>=500->"Errore del server. Il lavoro resta in coda; riprova più tardi."
+        else->"Richiesta rifiutata dal server."
+    }+" ("+e.diagnostic()+")"
+    e is java.net.SocketTimeoutException->"Tempo di risposta scaduto. Il lavoro resta sul dispositivo."
+    e is java.net.UnknownHostException||e is java.net.ConnectException->"Connessione non disponibile. Il lavoro resta sul dispositivo."
+    e is java.io.IOException->"Collegamento interrotto. La ricevuta verrà verificata al prossimo invio."
     e is IllegalArgumentException||e is IllegalStateException->e.message?:"Verifica i dati inseriti."
-    else->"Operazione non riuscita. Riprova; i dati già salvati sono conservati."
+    else->"Operazione non riuscita. I dati già salvati sono conservati."
 }

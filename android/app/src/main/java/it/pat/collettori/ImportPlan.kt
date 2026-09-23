@@ -38,7 +38,7 @@ object ImportPlanner {
     fun automaticMode(archive:ShapeArchive,mappings:List<LayerMapping>):String=when{
         archive.layers.any{it.kind=="segment"}->"LINES"
         archive.layers.filter{it.kind=="point"}.any{layer->mappings.firstOrNull{it.layer==layer.name}?.fields?.let{!it["previous"].isNullOrBlank()||!it["next"].isNullOrBlank()||!it["sequence"].isNullOrBlank()||!it["chainage"].isNullOrBlank()}==true}->"ORDERED"
-        else->"ISOLATED"
+        else->"ORDERED"
     }
     fun plan(archive:ShapeArchive,mappings:List<LayerMapping>,source:String,fallbackCollector:String,mode:String,orderConfirmed:Boolean,allowNewKeys:Boolean,tolerance:Double,existing:List<CatalogItem>,owner:String):ImportPlan {
         require(source.trim().length>=3){"Indicare un nome sorgente stabile (almeno 3 caratteri)"};require(tolerance.isFinite()&&tolerance in 0.0..20.0){"Tolleranza estremi: 0–20 metri"}
@@ -47,7 +47,7 @@ object ImportPlanner {
         archive.layers.forEach{layer->val report=keyReport(layer,mappings.first{it.layer==layer.name})
             require(report.valid){"${layer.name}: campo identificativo '${report.field}', ${report.empty} vuoti, ${report.duplicates} duplicati. Scegliere una chiave stabile univoca o correggere il file sorgente. "+report.examples.joinToString("; ")}
         }
-        val warnings=mutableListOf<String>();val staged=linkedMapOf<String,CatalogItem>();val all=existing.associateBy{it.id}.toMutableMap();val sourceKeys=mutableSetOf<String>()
+        val warnings=mutableListOf<String>();val staged=linkedMapOf<String,CatalogItem>();val all=existing.filter{!JSONObject(it.body).deleted()}.associateBy{it.id}.toMutableMap();val sourceKeys=mutableSetOf<String>()
         archive.layers.forEach{layer->val m=mappings.first{it.layer==layer.name}
             if(m.fields["key"]==REGISTERED_IDENTITY)warnings.add("${layer.name}: identità assegnate e registrate; record modificati richiederanno riconciliazione esplicita")
             if(!m.fields["collector"].isNullOrBlank()&&layer.features.any{m.value(it,"collector") in listOf("","0")})warnings.add("${layer.name}: campo ${m.fields["collector"]} con valori vuoti o 0; verificare i raggruppamenti prima di confermare")
@@ -55,16 +55,15 @@ object ImportPlanner {
         fun identity(kind:String,layer:String,key:String):String {
             require(key.isNotBlank()){"$layer: chiave sorgente assente"}
             val src="$source|$layer|$kind|$key";require(sourceKeys.add(src)){"Chiave sorgente duplicata in $layer: $key"}
-            val previous=existing.firstOrNull{it.kind==kind&&JSONObject(it.body).optString("source_identity")==src}
-            require(previous==null||!JSONObject(previous.body).deleted()){"Elemento di questa sorgente eliminato: non può essere reimportato"}
-            return previous?.id?:UUID.nameUUIDFromBytes(("coll-pat:$src").toByteArray()).toString()
+            val previous=existing.firstOrNull{it.kind==kind&&JSONObject(it.body).let{b->!b.deleted()&&b.optString("source_identity")==src}}
+            return previous?.id?:UUID.randomUUID().toString()
         }
         fun put(kind:String,data:JSONObject){val id=data.getString("id");val item=CatalogItem(owner,id,kind,data.toString());staged[id]=item;all[id]=item}
         fun automaticCollector():String{
-            val id=UUID.nameUUIDFromBytes(("coll-pat:auto-collector:"+source.lowercase()).toByteArray()).toString()
+            val id=all.values.firstOrNull{it.kind=="collector"&&JSONObject(it.body).optString("source_identity")=="$source|automatic|collector"}?.id?:UUID.randomUUID().toString()
             val existingCollector=all[id]
             if(existingCollector==null){
-                val code="AUTO-"+id.take(8).uppercase()
+                val code="AUTO-"+UUID.nameUUIDFromBytes(source.lowercase().toByteArray()).toString().take(8).uppercase()
                 put("collector",collectorDefaults(id,code,"Import automatico · $source").put("synthetic",false).put("source_identity","$source|automatic|collector"))
             }else require(existingCollector.kind=="collector"&&JSONObject(existingCollector.body).available()){"Collettore automatico archiviato o eliminato: scegliere un altro collettore"}
             return id
@@ -80,7 +79,7 @@ object ImportPlanner {
             // The administrator explicitly maps this field to catalogue codes; no asset matching by code.
             val found=all.values.firstOrNull{it.kind=="collector"&&JSONObject(it.body).optString("code").equals(code,ignoreCase=true)}
             if(found!=null){require(JSONObject(found.body).available()){"Il collettore $code è archiviato o eliminato"};return listOf(found.id)}
-            val id=UUID.nameUUIDFromBytes(("coll-pat:collector:"+source+":"+code).toByteArray()).toString();put("collector",collectorDefaults(id,code,code+" — importato").put("synthetic",false));return listOf(id)
+            val id=UUID.randomUUID().toString();put("collector",collectorDefaults(id,code,code+" — importato").put("synthetic",false).put("source_identity","$source|collector|$code"));return listOf(id)
         }
         val keyToPoint=mutableMapOf<String,MutableList<String>>();val rawPoints=mutableMapOf<String,Pair<ShapeFeature,LayerMapping>>()
         val run=UUID.randomUUID().toString()
@@ -88,7 +87,7 @@ object ImportPlanner {
             val map=mappings.first{it.layer==layer.name}
             for(feature in layer.features){
                 val key=registeredKey(feature,layer,map,source,existing);val id=identity("point",layer.name,key);val old=existing.find{it.id==id}?.let{JSONObject(it.body)}
-                require(sourceRecords(existing,source,layer).none{it.id!=id&&JSONObject(it.body).optString("source_fingerprint")==featureFingerprint(feature)}){"La chiave scelta cambia l’identità di record già importati: ripristina le colonne precedenti o usa la riconciliazione guidata"}
+                require(sourceRecords(existing,source,layer).filter{!JSONObject(it.body).deleted()}.none{it.id!=id&&JSONObject(it.body).optString("source_fingerprint")==featureFingerprint(feature)}){"La chiave scelta cambia l’identità di record già importati: ripristina le colonne precedenti o usa la riconciliazione guidata"}
                 val code=map.value(feature,"code").ifBlank{if(map.fields["key"]==REGISTERED_IDENTITY)"PZ-"+id.take(8).uppercase() else map.value(feature,"key")};require(code.isNotBlank()){"${layer.name}: seleziona la colonna del codice del pozzetto"}
                 val coord=feature.geometry.getJSONArray("coordinates");val members=collectors(feature,map)
                 val p=JSONObject().put("id",id).put("code",code).put("description",map.value(feature,"description")).put("latitude",coord.getDouble(1)).put("longitude",coord.getDouble(0))
@@ -97,7 +96,7 @@ object ImportPlanner {
                 val asphalt=map.value(feature,"under_asphalt").trim().lowercase()
                 p.put("under_asphalt",if(asphalt.isBlank())old?.optBoolean("under_asphalt")?:false else when(asphalt){"1","true","si","sì","yes"->true;"0","false","no"->false;else->error("Campo sotto asfalto non valido: usare sì/no o 1/0")})
                 // Preserve established topology when a partial file supplies no replacements.
-                listOf("previous_id","previous_distance_m","chainage_m","chainage_source","origin_id","branch","gis_chainage_m","sequence","next_ids","topology_end").forEach{k->old?.opt(k)?.let{p.put(k,it)}}
+                listOf("symbol","display_color","display_width","previous_id","previous_distance_m","chainage_m","chainage_source","origin_id","branch","gis_chainage_m","sequence","next_ids","topology_end").forEach{k->old?.opt(k)?.let{p.put(k,it)}}
                 map.value(feature,"chainage").takeIf{it.isNotBlank()}?.let{p.put("gis_chainage_m",decimalItalian(it)?:error("Progressiva GIS non valida"))}
                 put("point",p);rawPoints[id]=feature to map
                 if(key.isNotBlank())keyToPoint.getOrPut(key){mutableListOf()}.add(id)
@@ -148,7 +147,7 @@ object ImportPlanner {
         }else if(mode=="ORDERED"){
             require(archive.layers.none{it.kind=="segment"}){"Selezionare punti e linee per importare i layer lineari"}
             require(existing.none{it.kind=="segment"&&JSONObject(it.body).let{s->!s.optBoolean("schematic")&&(s.optString("from_id") in rawPoints||s.optString("to_id") in rawPoints)}}){"Esistono tracciati ufficiali per questi punti: scegli punti senza ordine per aggiornare l’anagrafica conservando le geometrie"}
-            val groups=rawPoints.keys.groupBy{id->val(f,m)=rawPoints[id]!!;JSONObject(all[id]!!.body).memberships().sorted().joinToString()+"|"+m.value(f,"branch")+"|"+m.layer}
+            val groups=rawPoints.keys.groupBy{id->val(f,m)=rawPoints[id]!!;JSONObject(all[id]!!.body).memberships().sorted().joinToString()+"|"+(m.fields["branch:"+featureFingerprint(f)]?:m.value(f,"branch"))+"|"+m.layer}
             for((_,ids) in groups){
                 val sample=rawPoints[ids.first()]!!;val mapping=sample.second
                 val ordered=if(!mapping.fields["previous"].isNullOrBlank()||!mapping.fields["next"].isNullOrBlank()){
@@ -158,16 +157,16 @@ object ImportPlanner {
                     val root=ids.filter{it !in incoming}.singleOrNull()?:error("Ordine ciclico o più origini: separare i rami")
                     val path=mutableListOf<String>();var at:String?=root;while(at!=null){require(at !in path){"Ciclo nell'ordine"};path.add(at);at=links[at]};require(path.size==ids.size){"Ordine discontinuo: separare i rami"};path
                 }else{
-                    val useSequence=!mapping.fields["sequence"].isNullOrBlank();require(useSequence||!mapping.fields["chainage"].isNullOrBlank()){"Ordine affidabile assente: mappare sequenza, progressiva oppure precedente/successivo"}
-                    val values=ids.associateWith{id->val(f,m)=rawPoints[id]!!;decimalItalian(m.value(f,if(useSequence)"sequence" else "chainage"))?:error("Ordine mancante/non numerico")}
+                    val guided=mapping.fields["guided_order"]=="true";val useSequence=!mapping.fields["sequence"].isNullOrBlank();require(guided||useSequence||!mapping.fields["chainage"].isNullOrBlank()){"Ordine affidabile assente: mappare sequenza, progressiva oppure precedente/successivo"}
+                    val values=ids.associateWith{id->val(f,m)=rawPoints[id]!!;decimalItalian(if(guided)m.fields["order:"+featureFingerprint(f)].orEmpty() else m.value(f,if(useSequence)"sequence" else "chainage"))?:error("Ordine mancante/non numerico")}
                     require(values.values.distinct().size==values.size){"Ordine duplicato: specificare un campo ramo"};ids.sortedBy{values[it]}
                 }
                 var chain=0.0
                 for((i,id) in ordered.withIndex()){
-                    val p=JSONObject(all[id]!!.body);val(f,m)=rawPoints[id]!!;p.put("branch",m.value(f,"branch")).put("sequence",i).put("origin_id",ordered.first()).put("chainage_source","CALCULATED_SCHEMATIC")
+                    val p=JSONObject(all[id]!!.body);val(f,m)=rawPoints[id]!!;p.put("branch",(m.fields["branch:"+featureFingerprint(f)]?:m.value(f,"branch"))).put("sequence",i).put("origin_id",ordered.first()).put("chainage_source","CALCULATED_SCHEMATIC")
                     if(i==0){p.remove("previous_id");p.remove("previous_distance_m")}else{
                         val prev=JSONObject(all[ordered[i-1]]!!.body);val geom=JSONObject().put("type","LineString").put("coordinates",JSONArray(listOf(listOf(prev.getDouble("longitude"),prev.getDouble("latitude")),listOf(p.getDouble("longitude"),p.getDouble("latitude")))))
-                        val len=geometryLength(geom);chain+=len;p.put("previous_id",prev.getString("id")).put("previous_distance_m",len)
+                        val len=geometryLength(geom);require(len>0.01){"Pozzetti coincidenti: verificare ordine e coordinate"};if(len>1000)warnings.add("Collegamento schematico oltre 1000 m: verificare gli estremi");chain+=len;p.put("previous_id",prev.getString("id")).put("previous_distance_m",len)
                         val key="${prev.getString("id")}>$id";val sid=identity("segment","schematic",key)
                         put("segment",JSONObject().put("id",sid).put("collectors",p.getJSONArray("collectors")).put("from_id",prev.getString("id")).put("to_id",id).put("geometry",geom).put("length_m",len).put("schematic",true).put("source_identity","$source|schematic|segment|$key").put("source",source))
                     };p.put("chainage_m",chain);put("point",p)

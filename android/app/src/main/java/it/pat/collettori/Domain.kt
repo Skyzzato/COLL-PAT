@@ -25,12 +25,12 @@ fun periodic(v:Visit)=!isCancelled(v)&&v.operational=="COMPLETO"&&JSONObject(v.b
 fun visitDay(v:Visit)=Instant.parse(JSONObject(v.body).optString("completed_at",JSONObject(v.body).getString("started_at"))).atZone(ZoneId.of("Europe/Rome")).toLocalDate()
 fun semester(instant:Instant):String {val d=instant.atZone(ZoneId.of("Europe/Rome"));return "${d.year}-S${if(d.monthValue<=6)1 else 2}"}
 fun mayManageCatalog(session:JSONObject?):Boolean = session?.has("access_token")==true&&session.optInt("protocol")==AppSpec.PROTOCOL&&session.optString("role")=="admin"
-fun hasAnomaly(body:JSONObject)=body.getJSONObject("sheet").let{s->s.optString("anomaly_note").isNotBlank()||(Repository.observationKeys+externalKeys).any{s.optString(it)=="ANOMALO"}||s.optBoolean("raise_needed")||s.optBoolean("road_repair_needed")}
+fun hasAnomaly(body:JSONObject)=body.getJSONObject("sheet").let{s->(body.optString("sheet_version")!="sheet-3"&&s.optString("anomaly_note").isNotBlank())||(Repository.observationKeys+externalKeys).any{s.optString(it)=="ANOMALO"}||s.optBoolean("raise_needed")||s.optBoolean("road_repair_needed")}
 val externalKeys=listOf("surface","subsidence")
 val collectorTypes=listOf("CV","CZI","CR","BOE'","opere accessorie")
 
 fun collectorDefaults(id:String,code:String,description:String)=JSONObject().put("id",id).put("code",code).put("description",description)
-    .put("display_color",DEFAULT_COLLECTOR_COLOR).put("type","CV").put("visits_h1",2).put("visits_h2",2).put("hours_km_visit",2.0)
+    .put("display_color",JSONObject.NULL).put("type","CV").put("visits_h1",2).put("visits_h2",2).put("hours_km_visit",2.0)
     .put("length_m",JSONObject.NULL).put("length_source","UNAVAILABLE").put("length_complete",false).put("archived",false)
 fun validateCollector(c:JSONObject){
     java.util.UUID.fromString(c.getString("id"))
@@ -75,8 +75,16 @@ fun validateInspection(body:JSONObject,status:String){
         else require(!s.optBoolean("opened")&&s.optString("no_open_reason").isNotBlank()&&listOf("deposits","flow","walls","damage").all{s.optString(it)=="NON_OSSERVABILE"}){"I controlli interni non sono osservabili"}
         require(!hasAnomaly(body)||s.optString("anomaly_note").isNotBlank()){"Descrivere l'anomalia o la necessità di intervento"}
     }
-    // An impediment documents the failed visit, without inventing a failed position event.
     if(status=="IMPEDITO"&&activeEvents(body).isEmpty())return
-    require(activeEvents(body).isNotEmpty()){"Rilevare una posizione valida prima di completare l’ispezione"}
-    if(lastEvidence(body)?.optJSONObject("local_evaluation")?.optString("state")!="COMPATIBILE")require(s.optString("exception_reason").isNotBlank()){"Motivare l'eccezione GPS"}
+    require(inspectionLocationReady(body)){"Acquisisci un rilievo GPS valido oppure conferma la motivazione del mancato rilievo"}
+    require(!(body.optJSONObject("gps_state")?.optString("status")=="NOT_RECORDED_WITH_REASON"&&activeEvents(body).isNotEmpty())){"GPS e mancato rilievo non possono coesistere"}
+}
+fun unifiedNotes(sheet:JSONObject)=listOf(sheet.optString("anomaly_note"),sheet.optString("notes")).filter{it.isNotBlank()}.distinct().joinToString("\n\n")
+fun applyUnsafe(sheet:JSONObject,value:Boolean):JSONObject=JSONObject(sheet.toString()).apply{
+    put("unsafe",value)
+    if(value){
+        listOf("deposits","flow","walls","damage").forEach{put(it,"NON_OSSERVABILE")}
+        listOf("closure","restored").forEach{put(it,"NON_APPLICABILE")}
+        put("opened",false);put("cleaning",org.json.JSONObject.NULL)
+    }
 }

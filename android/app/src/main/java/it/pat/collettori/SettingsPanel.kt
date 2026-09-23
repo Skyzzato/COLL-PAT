@@ -22,22 +22,20 @@ import kotlinx.coroutines.*
         if(expanded)content()
     }}
 }
-@Composable fun SettingsPanel(repo:Repository,settings:FieldSettings,onSettings:(FieldSettings)->Unit,catalog:List<CatalogItem>,visits:List<Visit>,queue:List<Pending>,onAccount:()->Unit,onMessage:(String)->Unit,onArchiveExport:()->Unit){
+@Composable fun SettingsPanel(repo:Repository,settings:FieldSettings,onSettings:(FieldSettings)->Unit,catalog:List<CatalogItem>,visits:List<Visit>,queue:List<Pending>,onAccount:()->Unit,onMessage:(String)->Unit,onOpen:(String,String)->Unit={_,_->},onArchiveExport:()->Unit){
     val scope=rememberCoroutineScope();var busy by remember{mutableStateOf(false)}
     fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:Exception){onMessage(friendlyError(e))}finally{busy=false}}}
+    var showQueue by remember{mutableStateOf(false)}
     var showImport by remember{mutableStateOf(false)}
     val stored by repo.dao.settings(repo.owner()).collectAsState(emptyList())
-    val logical=remember(queue,visits,stored){
-        val settingsByKey=stored.associate{it.key to it.value}
-        val ids=queuedLogicalIds(queue,queue.mapNotNull{op->settingsByKey["catalog-upload:"+op.operationId]?.let{op.operationId to it}}.toMap()).toMutableSet()
-        visits.filter{it.sync in listOf("IN_ATTESA","IN_CORSO","CONFLICT","AUTH_REQUIRED")}.forEach{ids.add("inspection:"+it.id)}
-        visits.filter{it.sync!="SALVATO_LOCALMENTE"&&!isCancelled(it)}.forEach{v->settingsByKey["photos:"+v.id]?.let{org.json.JSONArray(it).objects()}?.filter{it.optString("uploadStatus")!="UPLOADED"&&it.optString("localUri").isNotBlank()}?.forEach{ids.add("photo:"+it.getString("photoId"))}}
-        ids.size
-    }
+    val logical=remember(queue,visits,stored){logicalQueue(queue,visits,stored).size}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)){
         Text("Impostazioni",style=MaterialTheme.typography.headlineSmall)
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         SettingsSection("Mappa e aspetto",R.drawable.ic_map,true){
+            Choice("Colore predefinito dei tratti",settings.lineColor,lineColors){onSettings(settings.copy(lineColor=it))}
+            Choice("Spessore predefinito dei tratti",settings.lineWidth.toString(),(1..10).map{it.toString() to it.toString()}){onSettings(settings.copy(lineWidth=it.toInt()))}
+            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(30.dp)){drawLine(Color(android.graphics.Color.parseColor(settings.lineColor)),androidx.compose.ui.geometry.Offset(0f,size.height/2),androidx.compose.ui.geometry.Offset(size.width,size.height/2),settings.lineWidth*density)}
             Text("Visibilità pozzetti · zoom ≥ %.1f".format(settings.minZoomPozzetti))
             Slider(settings.minZoomPozzetti,{onSettings(settings.copy(minZoomPozzetti=it))},valueRange=8f..20f,steps=23)
             Text("I pozzetti vengono nascosti quando la mappa è troppo zoomata indietro. I tronchi rimangono visibili.",style=MaterialTheme.typography.bodySmall)
@@ -50,10 +48,9 @@ import kotlinx.coroutines.*
             }}
         }
         SettingsSection("GPS e rilevazione",R.drawable.ic_target){
-            Text("Distanza massima dal pozzetto · %.0f m".format(settings.maxDistance))
-            Slider(settings.maxDistance.toFloat(),{onSettings(settings.copy(maxDistance=it.toDouble()))},valueRange=1f..100f,steps=98)
-            Text("Accuratezza GPS massima ammessa · %.0f m".format(settings.maxAccuracy))
-            Slider(settings.maxAccuracy.toFloat(),{onSettings(settings.copy(maxAccuracy=it.toDouble()))},valueRange=1f..50f,steps=48)
+            Choice("Distanza massima dal pozzetto",settings.maxDistance.toInt().toString(),DISTANCE_STEPS.map{it.toInt().toString() to "${it.toInt()} m"}){onSettings(settings.copy(maxDistance=it.toDouble()))}
+            Choice("Accuratezza GPS massima ammessa",settings.maxAccuracy.toInt().toString(),ACCURACY_STEPS.map{it.toInt().toString() to "${it.toInt()} m"}){onSettings(settings.copy(maxAccuracy=it.toDouble()))}
+            stored.firstOrNull{it.key=="settings-normalized"}?.let{Text(it.value,style=MaterialTheme.typography.bodySmall)}
             Text("Accuratezza e distanza sono controlli indipendenti. La soglia usata viene conservata nella rilevazione.",style=MaterialTheme.typography.bodySmall)
         }
         SettingsSection("Ispezioni",R.drawable.ic_history){
@@ -75,7 +72,9 @@ import kotlinx.coroutines.*
                 })
             }}){Text("Sincronizza")}
             DatabaseRefreshButton(repo,onMessage)
-            queue.filter{it.error!=null}.distinctBy{it.visitId to it.error}.forEach{Text(it.error.orEmpty(),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)}
+            OutlinedButton(onClick={showQueue=true}){Text("Visualizza coda")}
+            val sendStamp by repo.dao.settingFlow(repo.owner(),"last-send-success").collectAsState(null)
+            Text("Ultimo invio ricevuto: "+(sendStamp?.let{shown(it)}?:"mai"),style=MaterialTheme.typography.bodySmall)
             if(queue.any{it.state=="CONFLICT"})Text("Alcune modifiche a ispezioni o dati cartografici richiedono una verifica del responsabile.",color=MaterialTheme.colorScheme.error)
         }
         SettingsSection("Account",R.drawable.ic_account){AccountPanel(repo,onAccount)}
@@ -91,6 +90,7 @@ import kotlinx.coroutines.*
             Text("© OpenStreetMap contributors · ODbL",style=MaterialTheme.typography.bodySmall)
         }
     }
+    if(showQueue)QueueDialog(repo,queue,visits,stored,{showQueue=false},onMessage,onOpen)
     if(showImport&&repo.canManageCatalog())ImportDialog(repo,catalog,{showImport=false},onMessage)
 }
 

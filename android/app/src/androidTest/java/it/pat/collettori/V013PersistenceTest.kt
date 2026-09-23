@@ -33,7 +33,7 @@ class V013PersistenceTest {
         db.dao().retryBlocked("alice");assertTrue(db.dao().pending("alice").isEmpty());db.close();context.deleteDatabase(name);Unit
     }
     private suspend fun draft():Visit{val pack=installTestCatalog(repo,"inspector");return repo.begin(JSONObject(pack.body).getJSONArray("points").getJSONObject(0),pack,"LIST")}
-    private suspend fun evidence(v:Visit){repo.appendEvent(v.id,JSONObject().put("inspection_id",v.id).put("manhole_id",v.manholeId).put("method",AcquisitionPolicy.METHOD).put("sample_count",5).put("duration_ms",5000).put("sample_span_ms",4000).put("match_outcome","VERIFIED").put("id",java.util.UUID.randomUUID().toString()).put("acquired_at","2026-01-01T00:00:00Z").put("latitude",46.0).put("longitude",11.0).put("accuracy_m",5).put("age_s",0).put("permission","PRECISE").put("applied_limits",JSONObject().put("max_accuracy_m",10).put("radius_m",15)).put("local_evaluation",JSONObject().put("state","COMPATIBILE").put("distance_m",8)))}
+    private suspend fun evidence(v:Visit){repo.appendEvent(v.id,testEvidence(v))}
     @Test fun queuedDraftDoubleTapAndNewVisitSameDay()=runBlocking{
         val first=draft();val second=draft();assertNotEquals(first.id,second.id)
         val b=JSONObject(first.body);b.getJSONObject("sheet").put("notes","Last note intact").put("exception_reason","Synthetic failed fix")

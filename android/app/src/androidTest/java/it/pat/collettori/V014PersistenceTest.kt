@@ -36,7 +36,7 @@ class V014PersistenceTest {
         db.dao().save(Visit("same-draft","alice","p","d","Alice unsent","BOZZA","IN_ATTESA"))
         db.dao().save(Visit("same-draft","bob","p","d","Bob server","BOZZA","RICEVUTO_SERVER"))
         db.dao().enqueue(Pending("op-a","alice","same-draft",1,"{}"));db.dao().enqueue(Pending("op-b","bob","same-draft",1,"{}"))
-        val settings=FieldSettings(minZoomPozzetti=16f,iconSize=10f,symbol="RING",asphalt=false,maxDistance=15.0,maxAccuracy=10.0)
+        val settings=FieldSettings(minZoomPozzetti=16f,iconSize=10f,symbol="RING",asphalt=false,maxDistance=15.0,maxAccuracy=20.0)
         db.dao().setting(Setting("alice","field-settings-v014",settings.json().toString()));db.close()
         val reopened=Room.databaseBuilder(context,LocalDatabase::class.java,name).build()
         assertEquals("Alice unsent",reopened.dao().visit("same-draft","alice")!!.body);assertEquals("Bob server",reopened.dao().visit("same-draft","bob")!!.body)

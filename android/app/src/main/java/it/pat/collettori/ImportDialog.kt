@@ -17,8 +17,9 @@ import org.json.JSONObject
 @Composable fun ImportDialog(repo:Repository,catalog:List<CatalogItem>,dismiss:()->Unit,message:(String)->Unit){
     if(!repo.canManageCatalog())return
     val scope=rememberCoroutineScope();var archive by remember{mutableStateOf<ShapeArchive?>(null)};var plan by remember{mutableStateOf<ImportPlan?>(null)};var mappings by remember{mutableStateOf(emptyList<LayerMapping>())}
-    var source by remember{mutableStateOf("")};var crs by remember{mutableStateOf("")};var encoding by remember{mutableStateOf("AUTO")};var advanced by remember{mutableStateOf(false)};var layerEncodings by remember{mutableStateOf<Map<String,String>>(emptyMap())};var fallback by remember{mutableStateOf("")};var mode by remember{mutableStateOf("ISOLATED")}
+    var source by remember{mutableStateOf("")};var crs by remember{mutableStateOf("")};var encoding by remember{mutableStateOf("AUTO")};var advanced by remember{mutableStateOf(false)};var layerEncodings by remember{mutableStateOf<Map<String,String>>(emptyMap())};var fallback by remember{mutableStateOf("")};var mode by remember{mutableStateOf("ORDERED")}
     var order by remember{mutableStateOf(true)};var tolerance by remember{mutableStateOf("5")};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var original by remember{mutableStateOf<String?>(null)}
+    DisposableEffect(Unit){onDispose{original?.let{java.io.File(it).delete()}}}
     var identityCatalog by remember{mutableStateOf(emptyList<CatalogItem>())}
     fun task(block:suspend()->Unit){if(busy)return;busy=true;error="";scope.launch{try{block()}catch(e:TimeoutCancellationException){error="Aggiornamento del catalogo non riuscito. Verifica la connessione e riprova."}catch(e:CancellationException){throw e}catch(e:OutOfMemoryError){archive=null;plan=null;error="Memoria insufficiente: dividere il file in layer più piccoli. Nessuna importazione confermata."}catch(e:Exception){error=when{
         e is ApiError->friendlyError(e)
@@ -33,9 +34,9 @@ import org.json.JSONObject
         mappings=proposed;mode=ImportPlanner.automaticMode(loaded,proposed)
     }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)task{
-        archive=null;plan=null;mappings=emptyList()
+        archive=null;plan=null;mappings=emptyList();original?.let{java.io.File(it).delete()};original=null
         val file=withContext(Dispatchers.IO){
-            val dir=java.io.File(repo.context.filesDir,"import-originals").apply{mkdirs()};val target=java.io.File(dir,java.util.UUID.randomUUID().toString()+".zip")
+            val dir=java.io.File(repo.context.cacheDir,"import-preview").apply{mkdirs()};val target=java.io.File(dir,java.util.UUID.randomUUID().toString()+".zip")
             try{repo.context.contentResolver.openInputStream(uri)!!.use{input->java.io.FileOutputStream(target).use{out->val buffer=ByteArray(8192);var total=0;while(true){val n=input.read(buffer);if(n<0)break;total+=n;require(total<=Shapefile.MAX_BYTES){"ZIP compresso oltre 32 MiB"};out.write(buffer,0,n)};out.fd.sync()}};target}catch(e:Exception){target.delete();throw e}
         };original=file.absolutePath
         source=repo.context.contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())it.getString(0).substringBeforeLast('.') else ""}.orEmpty()
@@ -61,6 +62,7 @@ import org.json.JSONObject
             archive?.let{a->
                 Text("${a.layers.size} layer · ${a.layers.sumOf{it.features.size}} oggetti")
                 Text("Importazione automatica: sorgente «$source» · "+when(mode){"LINES"->"punti e linee";"ORDERED"->"punti ordinati";else->"punti indipendenti"}+". Se manca il collettore viene creato un collettore automatico per questa sorgente.",style=MaterialTheme.typography.bodySmall)
+                Choice("Collegamenti",mode,listOf("LINES" to "Usa le linee reali","ORDERED" to "Collega i pozzetti con tratti rettilinei","ISOLATED" to "Importa solo punti, senza collegamenti")){mode=it}
                 if(advanced){
                     Field("Nome sorgente stabile per le reimportazioni",source){source=it}
                     Choice("Collettore per record senza campo collettore",fallback,listOf("" to "Crea automaticamente")+catalog.filter{it.kind=="collector"&&!JSONObject(it.body).optBoolean("archived")}.map{it.id to JSONObject(it.body).getString("code")}){fallback=it}
@@ -95,6 +97,13 @@ import org.json.JSONObject
                             Choice("Questo record corrisponde a…",map.fields["match:$fingerprint"].orEmpty(),listOf("" to "Scegli una corrispondenza","@NEW" to "Confermo: è un elemento nuovo")+prior.filter{!JSONObject(it.body).deleted()}.map{old->val b=JSONObject(old.body);old.id to ("#"+b.optString("code")+" · "+b.optJSONObject("source_attributes")?.toString().orEmpty().take(140))}){chosen->mappings=mappings.map{if(it.layer==layer.name)it.copy(fields=it.fields+("match:$fingerprint" to chosen))else it}}
                         }
                     }
+                    if(mode=="ORDERED"&&layer.kind=="point"&&listOf("previous","next","sequence","chainage").all{map.fields[it].isNullOrBlank()}){
+                        Text("Ordine non presente nel file. Indica ramo e ordine di ogni punto: il numero 1 è l’origine del ramo. Controlla poi i collegamenti sulla mappa.")
+                        layer.features.forEach{f->val fp=featureFingerprint(f);val label=map.value(f,"code").ifBlank{map.recordKey(f)}
+                            Field("Ordine · $label",map.fields["order:$fp"].orEmpty()){value->mappings=mappings.map{if(it.layer==layer.name)it.copy(fields=it.fields+("guided_order" to "true")+("order:$fp" to value))else it}}
+                            Field("Ramo · $label",map.fields["branch:$fp"].orEmpty()){value->mappings=mappings.map{if(it.layer==layer.name)it.copy(fields=it.fields+("branch:$fp" to value))else it}}
+                        }
+                    }
                     val keys=if(layer.kind=="point")listOf("key","code","description","collector","asset_type","under_asphalt")+(if(mode=="ORDERED")listOf("sequence","chainage","branch","previous","next")else listOf("chainage"))else listOf("key","code","collector","from","to")
                     if(advanced)keys.filter{it !in listOf("key","code","collector")}.forEach{k->Choice(mapOf("description" to "Descrizione","asset_type" to "Tipo manufatto (codici GIS originali conservati)","under_asphalt" to "Sotto asfalto (sì/no)","sequence" to "Sequenza ordinale","chainage" to "Progressiva GIS (metri)","branch" to "Ramo","previous" to "Chiave precedente","next" to "Chiave successivo","from" to "Chiave estremo iniziale","to" to "Chiave estremo finale")[k]!!,map.fields[k]?:"",listOf("" to "Non presente")+layer.fields.map{it to fieldExample(layer,it)}){field->mappings=mappings.map{if(it.layer==layer.name)it.copy(fields=it.fields+(k to field))else it}}}
                 }
@@ -103,9 +112,9 @@ import org.json.JSONObject
                     val chosenMappings=mappings;val chosenSource=source.trim();val chosenFallback=fallback;val chosenMode=mode;val chosenOrder=order;val chosenTolerance=tolerance
                     task{
                         // Reimports must compare with the complete current project, not a stale UI snapshot.
-                        if(repo.authenticated())withTimeout(30000){repo.catalog()}
+                        if(repo.authenticated())try{withTimeout(30000){repo.catalog()}}catch(e:java.io.IOException){if(e is ApiError)throw e}
                         check(repo.canManageCatalog()){"Importazione riservata al responsabile del progetto"}
-                        val owner=repo.owner();val existing=repo.dao.catalogNow(owner)+repo.dao.settingsNow(owner).filter{it.key.startsWith("deleted:")}.map{val b=JSONObject(it.value);CatalogItem(owner,b.getString("id"),b.getString("kind"),b.toString())}
+                        val owner=repo.owner();val existing=repo.dao.catalogNow(owner).filter{!JSONObject(it.body).deleted()}
                         identityCatalog=existing
                         if(a.layers.any{unresolvedFeatures(it,chosenMappings.first{m->m.layer==it.name},chosenSource,existing).isNotEmpty()}){error="Completa le corrispondenze dei record modificati o nuovi, poi riapri l’anteprima.";return@task}
                         plan=withContext(Dispatchers.Default){ImportPlanner.plan(a,chosenMappings,chosenSource,chosenFallback,chosenMode,chosenOrder,false,decimalItalian(chosenTolerance)?:error("Tolleranza non valida"),existing,owner)}

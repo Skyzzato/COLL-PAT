@@ -1,5 +1,11 @@
 # Modello dati COLL-PAT v0.2
 
+## Aggiornamento v0.21
+
+La v0.21 aggiunge object_deletions, retired_operations e storage_deletions; i payload eliminati non sono conservati nelle ricevute ritirate. Room resta v3. GPS v2 e mancato rilievo sono proprietà JSON versionate; under_asphalt, display_color, display_width e symbol sono aggiornati dalla RPC limitata. [Dettagli](MIGRATIONS-v0.21.md).
+
+## Documentazione delle versioni precedenti
+
 ## PostgreSQL
 
 La migrazione 007 aggiunge `catalog_deletions(project_id,id,kind,source_identity,deleted_at,deleted_by,original)`, privata con RLS. ID e identità sorgente eliminati non sono riutilizzabili. La RPC di eliminazione conserva gli elementi condivisi e i riferimenti necessari allo storico; i marcatori escludono tutti gli eliminati dal catalogo visibile. Un trigger differito verifica che `next_ids` punti a pozzetti attivi appartenenti allo stesso collettore, anche quando creati nello stesso batch.

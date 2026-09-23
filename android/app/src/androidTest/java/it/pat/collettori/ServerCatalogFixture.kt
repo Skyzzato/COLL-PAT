@@ -20,3 +20,9 @@ suspend fun installTestCatalog(repo:Repository,role:String="admin"):OfflinePacka
     repo.dao.setting(Setting(owner,"generation","0"));repo.rebuildPackage(owner)
     return repo.dao.pack(owner,AppSpec.PACKAGE)!!
 }
+
+fun testEvidence(v:Visit,latitude:Double=46.0,longitude:Double=11.0):JSONObject{
+    val window=GpsWindow(0,20.0);listOf(3_000_000_000L,5_000_000_000L,7_500_000_000L).forEach{window.add(GpsSample(it,latitude,longitude,5.0),it)}
+    return window.finish(8_000_000_000L).put("id",UUID.randomUUID().toString()).put("inspection_id",v.id).put("manhole_id",v.manholeId).put("method",AcquisitionPolicy.METHOD)
+        .put("permission","PRECISE").put("mock",false).put("acquired_at",java.time.Instant.now().toString()).put("applied_limits",JSONObject().put("max_accuracy_m",20).put("radius_m",20)).put("local_evaluation",JSONObject().put("state","COMPATIBILE").put("distance_m",0)).put("match_outcome","VERIFIED")
+}

@@ -31,7 +31,7 @@ class PilotApplication:Application(){
 }
 
 class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPreferenceName:String="session",httpClient:okhttp3.OkHttpClient?=null){
-    val db=Room.databaseBuilder(context,LocalDatabase::class.java,databaseName).addMigrations(MIGRATION_1_2,MIGRATION_2_3).build()
+    val db=Room.databaseBuilder(context,LocalDatabase::class.java,databaseName).addMigrations(MIGRATION_1_2,MIGRATION_2_3).addCallback(object:androidx.room.RoomDatabase.Callback(){override fun onOpen(db:androidx.sqlite.db.SupportSQLiteDatabase){db.query("PRAGMA secure_delete=ON").use{it.moveToFirst()}}}).build()
     val dao=db.dao();val store=SessionStore(context,sessionPreferenceName);val api=httpClient?.let{Api(store,it)}?:Api(store)
     val writes=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private val mutation=Mutex()
@@ -58,6 +58,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     suspend fun prepareWorkspace(){
         if(store.get()==null)return
         val account=owner()
+        purgeLocalFiles()
         // Never assign new reset generations to v0.12 data or outbox operations.
         if(dao.settingValue(account,"legacy-backed-up")==null){
             val old=dao.visitsNow(account).filter{!JSONObject(it.body).has("payload_version")}
@@ -78,7 +79,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         checkOffline();val account=owner();val id=UUID.randomUUID().toString();val s=store.get()!!
         var body=JSONObject().put("id",id).put("manhole_id",point.getString("id")).put("dataset_id",pack.id).put("device_id",store.deviceId)
             .put("user_id",s.getString("user_id")).put("selection_method",method).put("started_at",Instant.now().toString()).put("revision",1)
-            .put("sheet_version","sheet-2").put("payload_version",AppSpec.PROTOCOL).put("app_version",AppSpec.version).put("project_id",project()).put("generation",generation(account))
+            .put("sheet_version","sheet-3").put("gps_contract",2).put("payload_version",AppSpec.PROTOCOL).put("app_version",AppSpec.version).put("project_id",project()).put("generation",generation(account))
             .put("model","ORDINARY").put("periodic_control",false).put("events",JSONArray()).put("sheet",defaultSheet())
         body.put("status","BOZZA").put("created_by",s.getString("user_id")).put("created_at",body.getString("started_at")).put("updated_by",s.getString("user_id")).put("updated_at",body.getString("started_at")).put("server_revision",0).put("local_edit",1).put("shared_protocol",true)
         if(point.optBoolean("under_asphalt"))body=applyTemplate(body,"ASPHALT_EXTERNAL")
@@ -91,7 +92,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         val current=dao.visit(id,owner())?:error("Bozza assente")
         if(current.operational!="BOZZA"||isCancelled(current))return@withTransaction current
         check(current.sync!="CONFLICT"){"Bozza modificata altrove. Conserva la copia locale e apri la versione server."}
-        val merged=JSONObject(body.toString()).put("events",JSONObject(current.body).getJSONArray("events"))
+        val merged=JSONObject(body.toString()).put("events",JSONObject(current.body).getJSONArray("events")).put("gps_state",JSONObject(current.body).opt("gps_state")?:JSONObject.NULL)
         stampEdit(merged,JSONObject(current.body));val next=current.copy(body=merged.toString(),sync=if(authenticated())"IN_ATTESA" else "SALVATO_LOCALMENTE");dao.save(next)
         if(queueNow&&authenticated())queueSnapshot(next)
         syncNow();next
@@ -100,9 +101,23 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         val v=dao.visit(id,owner())?:error("Bozza assente");check(v.operational=="BOZZA"&&!isCancelled(v)&&v.sync!="CONFLICT"){"Scheda registrata: creare una nuova ispezione"}
         val body=JSONObject(v.body);validateNewEvidence(event,body)
         if(body.getJSONArray("events").objects().any{it.optString("id")==event.getString("id")})return@withTransaction v
-        body.getJSONArray("events").put(event)
+        body.put("events",JSONArray(listOf(event))).put("gps_state",JSONObject().put("status","RECORDED"))
         if(motivatedGpsException(event))body.getJSONObject("sheet").put("exception_reason",event.getString("exception_reason"))
         stampEdit(body,JSONObject(v.body));v.copy(body=body.toString(),sync=if(authenticated())"IN_ATTESA" else v.sync).also{dao.save(it);syncNow()}
+    }}
+    suspend fun beginGpsAttempt(id:String)=changeGpsState(id){body->
+        body.put("events",JSONArray()).put("gps_contract",2).put("gps_state",JSONObject().put("status","ATTEMPTED").put("attempt_id",UUID.randomUUID().toString()).put("attempted_at",Instant.now().toString()).put("author",store.get()!!.getString("user_id")))
+    }
+    suspend fun recordNoGps(id:String,reason:String)=changeGpsState(id){body->
+        require(reason.trim().length in 1..1000){"Motivazione non rilievo GPS obbligatoria (massimo 1000 caratteri)"}
+        val state=body.optJSONObject("gps_state")?:error("Esegui prima un tentativo GPS")
+        require(state.optString("status")=="ATTEMPTED"){"Ripeti il tentativo GPS prima di confermare una nuova motivazione"}
+        state.put("status","NOT_RECORDED_WITH_REASON").put("reason",reason.trim()).put("author",store.get()!!.getString("user_id")).put("confirmed_at",Instant.now().toString())
+        body.put("events",JSONArray()).put("gps_state",state)
+    }
+    private suspend fun changeGpsState(id:String,change:(JSONObject)->Unit)=mutation.withLock{db.withTransaction{
+        val v=dao.visit(id,owner())?:error("Bozza assente");check(v.operational=="BOZZA"&&v.sync!="CONFLICT")
+        val b=JSONObject(v.body);change(b);stampEdit(b,JSONObject(v.body));dao.save(v.copy(body=b.toString(),sync="IN_ATTESA"));syncNow()
     }}
     private suspend fun queueSnapshot(v:Visit){
         val b=JSONObject(v.body)
@@ -113,7 +128,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     }
     private suspend fun enqueue(account:String,ref:String,kind:String,payload:JSONObject,gen:Long):Pending {
         val id=UUID.randomUUID().toString();val revision=(dao.pendingVisit(ref,account).maxOfOrNull{it.revision}?:0)+1
-        val envelope=JSONObject().put("operation_id",id).put("project_id",project()).put("generation",gen).put("payload_version",AppSpec.PROTOCOL).put("kind",kind).put("app_version",AppSpec.version).put("payload",payload)
+        val envelope=JSONObject().put("operation_id",id).put("queued_at",Instant.now().toString()).put("project_id",project()).put("generation",gen).put("payload_version",AppSpec.PROTOCOL).put("kind",kind).put("app_version",AppSpec.version).put("payload",payload)
         return Pending(id,account,ref,revision,envelope.toString(),if(authenticated())"IN_ATTESA" else "AUTH_REQUIRED",null,project(),gen,AppSpec.PROTOCOL,kind).also{dao.enqueue(it)}
     }
     suspend fun complete(id:String,body:JSONObject,status:String):Visit=mutation.withLock{
@@ -123,13 +138,13 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
             if(current.operational!="BOZZA")return@withTransaction current
             check(!isCancelled(current));check(JSONObject(current.body).optInt("payload_version")==AppSpec.PROTOCOL){"Bozza precedente: esportare e creare una nuova ispezione"}
             check(current.sync!="CONFLICT"){"Bozza modificata altrove. Conserva la copia locale e apri la versione server."}
-            val merged=JSONObject(body.toString()).put("events",JSONObject(current.body).getJSONArray("events"))
+            val merged=JSONObject(body.toString()).put("events",JSONObject(current.body).getJSONArray("events")).put("gps_state",JSONObject(current.body).opt("gps_state")?:JSONObject.NULL)
             validateInspection(merged,status)
-            if(status=="COMPLETO")check(usableInspectionGps(lastEvidence(merged))){"GPS non affidabile: acquisisci una misura accurata e verifica la corrispondenza o motiva l’eccezione."}
+            if(status=="COMPLETO")check(inspectionLocationReady(merged)){"GPS non affidabile: acquisisci una misura accurata e verifica la corrispondenza o motiva l’eccezione."}
             stampEdit(merged,JSONObject(current.body));merged.put("submitted_by",store.get()!!.getString("user_id")).put("submitted_at",Instant.now().toString())
             if(status=="IMPEDITO"){
                 val s=merged.getJSONObject("sheet");s.put("opened",false).put("no_open_reason",s.getString("impediment_reason")).put("cleaning",JSONObject.NULL)
-                (observationKeys+externalKeys).forEach{s.put(it,"NON_OSSERVABILE")}
+                listOf("deposits","flow","walls","damage").forEach{s.put(it,"NON_OSSERVABILE")};listOf("closure","restored").forEach{s.put(it,"NON_APPLICABILE")}
             }
             merged.put("status",status).put("completed_at",Instant.now().toString()).put("periodic_control",status=="COMPLETO")
             merged.put("photos",JSONArray(PhotoRepository(this@Repository).list(current).map{p->JSONObject().put("id",p.getString("photoId")).put("created_at",p.getString("createdAt"))}))
@@ -160,7 +175,8 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     };syncNow()}
     suspend fun setVisible(id:String,value:Boolean){dao.setting(Setting(owner(),"visible:$id",value.toString()))}
     suspend fun visibility():Set<String> = dao.catalogNow(owner()).filter{it.kind=="collector"&&dao.settingValue(owner(),"visible:${it.id}")=="false"}.map{it.id}.toSet()
-    suspend fun saveCatalog(items:List<CatalogItem>,provenance:JSONObject?=null)=mutation.withLock{
+    suspend fun saveCatalog(input:List<CatalogItem>,provenance:JSONObject?=null)=mutation.withLock{
+        val items=updateSchematicSegments(input,dao.catalogNow(owner()))
         check(canManageCatalog()){"Gestione riservata al responsabile del progetto"}
         val account=owner()
         val deleted=dao.settingsNow(account).filter{it.key.startsWith("deleted:")}.map{it.key.removePrefix("deleted:")}.toSet()
@@ -181,7 +197,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         };syncNow()
     }
     // Used inside the caller's Room transaction, including safe cancellation of unsent batches.
-    private suspend fun enqueueCatalog(account:String,payload:JSONObject){
+    internal suspend fun enqueueCatalog(account:String,payload:JSONObject){
             val reference=UUID.randomUUID().toString();val gen=generation(account)
             if(payload.toString().toByteArray().size<=4*1024*1024)enqueue(account,reference,"catalog",payload,gen)
             else{
@@ -202,52 +218,61 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     }
     suspend fun deleteImpact(id:String):CollectorDeletion {
         val account=owner();val items=dao.catalogNow(account);val visits=dao.visitsNow(account)
-        val pointIds=items.filter{it.kind=="point"&&id in JSONObject(it.body).memberships()}.map{it.id}.toSet()
-        return deletionImpact(id,items,visits,visits.filter{it.manholeId in pointIds}.sumOf{PhotoRepository(this).list(it).size})
+        return deletionImpact(id,items,visits,visits.filter{it.manholeId in items.filter{i->i.kind=="point"&&id in JSONObject(i.body).memberships()}.map{it.id}}.sumOf{PhotoRepository(this).list(it).size})
     }
-    suspend fun deleteCollector(id:String)=syncLock.withLock{mutation.withLock{
-        check(canManageCatalog()){"Eliminazione riservata all’amministratore"}
-        val account=owner();val items=dao.catalogNow(account);val collector=items.firstOrNull{it.id==id&&it.kind=="collector"}?:error("Collettore non disponibile")
-        val impact=deleteImpact(id)
-        require(items.none{it.kind=="segment"&&it.id in impact.shared&&JSONObject(it.body).let{b->b.optString("from_id") in impact.removed||b.optString("to_id") in impact.removed}}){"Relazioni condivise incoerenti: correggere le appartenenze prima di eliminare"}
-        val adjusted=items.filter{it.id !in impact.removed}.mapNotNull{item->
-            val b=JSONObject(item.body);var changed=false
-            if(item.id in impact.shared){b.put("collectors",JSONArray(b.memberships()-id));changed=true}
-            val links=b.optJSONArray("next_ids")?.strings()
-            if(links?.any{it in impact.removed}==true){b.put("next_ids",JSONArray(links.filter{it !in impact.removed}));changed=true}
-            if(changed)item.copy(body=b.toString())else null
-        }.associateBy{it.id}
-        val localOnly=collector.sync!="RICEVUTO_SERVER"&&impact.inspections==0&&impact.removed.all{dao.settingValue(account,"server-known:$it")==null&&dao.settingValue(account,"catalog-attempted:$it")==null}
+    suspend fun deleteCollector(id:String):Boolean {deletePermanently(deletionPreview("collector",id));return false}
+    suspend fun deletionPreview(kind:String,id:String):JSONObject {
+        val local=localDeletionScope(kind,id)
+        return try{api.rpc("coll_pat_deletion_preview",JSONObject().put("p_project",project()).put("p_kind",kind).put("p_id",id),owner()).also{remote->
+            // Unsent local children must be included in the visible confirmation as well.
+            listOf("removed","shared","inspections","photos").forEach{k->val combined=(remote.getJSONArray(k).strings()+local.getJSONArray(k).strings()).distinct().sorted();remote.put(k,JSONArray(combined))}
+            listOf("points","segments").forEach{k->remote.put(k,JSONArray((remote.optJSONArray(k)?.strings().orEmpty()+local.getJSONArray(k).strings()).distinct().sorted()))}
+        }}catch(e:ApiError){throw e}catch(_:java.io.IOException){local}
+    }
+    suspend fun deletePermanently(scope:JSONObject)=syncLock.withLock{mutation.withLock{
+        val account=owner();val kind=scope.getString("kind");val id=scope.getString("id")
+        if(kind!="inspection")check(canManageCatalog()){"Eliminazione riservata all’amministratore"}
+        val current=localDeletionScope(kind,id)
+        listOf("removed","shared","inspections","photos").forEach{k->check(current.getJSONArray(k).strings().all{it in scope.getJSONArray(k).strings()}){"Ambito locale cambiato: riapri la conferma"}}
+        val gen=generation(account)
         db.withTransaction{
-            if(localOnly){
-                // Only rewrite never-attempted batches. Immutable requests already sent retain their receipt identity.
-                val batches=dao.allPending(account).filter{it.kind=="catalog"}
-                for(op in batches){
-                    val p=dao.settingValue(account,"catalog-upload:"+op.operationId)?.let(::JSONObject)?:JSONObject(op.body).getJSONObject("payload")
-                    val rows=p.optJSONArray("items")?.objects().orEmpty()
-                    if(rows.none{row->val rid=row.getJSONObject("data").getString("id");rid in impact.removed||rid in adjusted})continue
-                    val keep=rows.filter{it.getJSONObject("data").getString("id") !in impact.removed}.map{row->
-                        adjusted[row.getJSONObject("data").getString("id")]?.let{row.put("data",JSONObject(it.body))};row
-                    }
-                    dao.pendingVisit(op.visitId,account).filter{it.kind.startsWith("catalog")}.forEach{dao.acknowledge(it.operationId)}
-                    dao.removeSetting(account,"catalog-upload:"+op.operationId)
-                    if(keep.isNotEmpty())enqueueCatalog(account,JSONObject().put("items",JSONArray(keep)).put("provenance",JSONObject.NULL))
-                }
-            }
-            for(item in items.filter{it.id in impact.removed}){
-                dao.setting(Setting(account,"deleted:"+item.id,JSONObject(item.body).put("deleted",true).put("kind",item.kind).toString()))
-                dao.removeCatalog(account,item.id);dao.removeSetting(account,"visible:"+item.id)
-            }
-            adjusted.values.forEach{dao.putCatalog(it)}
-            if(!localOnly)enqueue(account,id,"catalog_delete",JSONObject().put("id",id).put("confirmed",true),generation(account))
-            rebuildPackage(account)
-        };syncNow();localOnly
+            purgeLocal(scope)
+            dao.allPending(account).filter{it.kind=="permanent_delete"&&it.visitId==id&&it.state=="CONFLICT"}.forEach{dao.acknowledge(it.operationId)}
+            val payload=JSONObject().put("id",id).put("kind",kind).put("confirmed",true).put("scope",scope)
+            enqueue(account,id,"permanent_delete",payload,gen)
+            dao.setting(Setting(account,"deletion-state:$id","Eliminato dal dispositivo — cancellazione sul server in attesa"))
+        }
+        purgeLocalFiles();syncNow()
     }}
+    suspend fun patchObject(id:String,changes:JSONObject)=mutation.withLock{db.withTransaction{
+        val account=owner();val item=dao.catalogNow(account).firstOrNull{it.id==id}?:error("Oggetto assente")
+        check(changes.keys().asSequence().all{it=="under_asphalt"&&item.kind=="point"||canManageCatalog()})
+        val data=JSONObject(item.body);val expected=JSONObject();changes.keys().forEach{k->expected.put(k,data.opt(k)?:JSONObject.NULL);data.put(k,changes.get(k))}
+        dao.putCatalog(item.copy(body=data.toString(),sync="IN_ATTESA"))
+        enqueue(account,id,"object_patch",JSONObject().put("id",id).put("changes",changes).put("expected",expected),generation(account));rebuildPackage(account);syncNow()
+    }}
+    suspend fun changeTemplate(id:String,input:JSONObject,model:String):Visit=mutation.withLock{db.withTransaction{
+        val account=owner();val current=dao.visit(id,account)?:error("Bozza assente");check(current.operational=="BOZZA"&&current.sync!="CONFLICT")
+        val body=applyTemplate(input,model).put("events",JSONObject(current.body).getJSONArray("events")).put("gps_state",JSONObject(current.body).opt("gps_state")?:JSONObject.NULL)
+        if(model=="ASPHALT_EXTERNAL"){
+            val point=dao.catalogNow(account).first{it.id==current.manholeId};val data=JSONObject(point.body)
+            if(!data.optBoolean("under_asphalt")){
+                val expected=JSONObject().put("under_asphalt",data.opt("under_asphalt")?:JSONObject.NULL);data.put("under_asphalt",true)
+                dao.putCatalog(point.copy(body=data.toString(),sync="IN_ATTESA"))
+                enqueue(account,point.id,"object_patch",JSONObject().put("id",point.id).put("expected",expected).put("changes",JSONObject().put("under_asphalt",true)),generation(account));rebuildPackage(account)
+            }
+        }
+        stampEdit(body,JSONObject(current.body));val next=current.copy(body=body.toString(),sync="IN_ATTESA");dao.save(next);syncNow();next
+    }}
+    suspend fun setPointAsphalt(id:String,value:Boolean){
+        val p=dao.catalogNow(owner()).firstOrNull{it.id==id}?:error("Pozzetto assente")
+        if(JSONObject(p.body).optBoolean("under_asphalt")!=value)patchObject(id,JSONObject().put("under_asphalt",value))
+    }
     suspend fun refreshDatabase(){
         check(refreshLock.tryLock()){"Aggiornamento già in corso"}
         val account=owner()
         refreshing.value=true
-        try{catalog();downloadHistory();check(owner()==account){"Account cambiato durante l’aggiornamento"};dao.setting(Setting(account,"database-last-success",Instant.now().toString()))}finally{refreshing.value=false;refreshLock.unlock()}
+        try{syncLock.withLock{catalogInternal();downloadHistoryInternal()};check(owner()==account){"Account cambiato durante l’aggiornamento"};dao.setting(Setting(account,"database-last-success",Instant.now().toString()))}finally{refreshing.value=false;refreshLock.unlock()}
     }
     suspend fun reconcile():JSONObject{
         val account=owner();val s=api.rpc("coll_pat_status",JSONObject().put("p_project",project()),account)
@@ -260,7 +285,8 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         val current=store.get();if(current!=null&&sessionOwner(current)==account){store.save(current.put("role",s.getString("role")));dao.setting(Setting(account,"verified-role",s.getString("role")))}
         return s
     }
-    suspend fun catalog():JSONObject{
+    suspend fun catalog():JSONObject=syncLock.withLock{catalogInternal()}
+    private suspend fun catalogInternal():JSONObject{
         val account=owner();reconcile();val loaded=mutableListOf<CatalogItem>();val archived=mutableListOf<CatalogItem>();val deleted=mutableListOf<JSONObject>();var offset=0;var revision:Long?=null
         do{
             val page=api.rpc("coll_pat_catalog",JSONObject().put("p_project",project()).put("p_offset",offset).put("p_revision",revision?:JSONObject.NULL),account)
@@ -271,21 +297,25 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
             offset+=page.getJSONArray("items").length()
             check(offset<=100000){"Catalogo troppo grande"}
         }while(page.getBoolean("has_more"))
+        val permanent=api.rpc("coll_pat_deleted",JSONObject().put("p_project",project()),account).getJSONArray("items").objects()
         mutation.withLock{db.withTransaction{
+            if(permanent.isNotEmpty())purgeRemoteMarkers(permanent)
             for(item in deleted){val id=item.getString("id");dao.setting(Setting(account,"deleted:$id",item.toString()));dao.removeCatalog(account,id)}
             val tombstones=dao.settingsNow(account).filter{it.key.startsWith("deleted:")}.map{it.key.removePrefix("deleted:")}.toSet()
-            val pendingIds=dao.allPending(account).filter{it.kind.startsWith("catalog")}.flatMap{op->val p=dao.settingValue(account,"catalog-upload:"+op.operationId)?.let(::JSONObject)?:JSONObject(op.body).getJSONObject("payload");p.optJSONArray("items")?.objects().orEmpty().map{i->i.getJSONObject("data").getString("id")}}.toSet()
+            val pendingIds=dao.allPending(account).filter{it.kind.startsWith("catalog")||it.kind=="object_patch"}.flatMap{op->val p=dao.settingValue(account,"catalog-upload:"+op.operationId)?.let(::JSONObject)?:JSONObject(op.body).getJSONObject("payload");if(op.kind=="object_patch")listOf(p.getString("id"))else p.optJSONArray("items")?.objects().orEmpty().map{i->i.getJSONObject("data").getString("id")}}.toSet()
             loaded.filter{it.id !in pendingIds&&it.id !in tombstones}.forEach{item->val data=JSONObject(item.body);if(item.kind!="collector")data.put("collectors",JSONArray(data.memberships().filter{it !in tombstones}));dao.putCatalog(item.copy(body=data.toString()));dao.setting(Setting(account,"server-known:"+item.id,"true"))}
             archived.filter{it.id !in tombstones}.forEach{dao.putCatalog(it)}
             dao.setting(Setting(account,"catalog-state","Completo dal server · ${Instant.now()}"));rebuildPackage(account)
         }};return localCatalog()!!
     }
-    suspend fun downloadHistory(full:Boolean=true,semesterOnly:String?=null){
+    suspend fun downloadHistory(full:Boolean=true,semesterOnly:String?=null)=syncLock.withLock{downloadHistoryInternal(full,semesterOnly)}
+    private suspend fun downloadHistoryInternal(full:Boolean=true,semesterOnly:String?=null){
         val account=owner();reconcile();var offset=0;var cursor:String?=null
         do{
             val page=if(semesterOnly!=null)api.rpc("coll_pat_semester_history",JSONObject().put("p_project",project()).put("p_semester",semesterOnly).put("p_offset",offset),account) else if(full)api.rpc("coll_pat_history",JSONObject().put("p_project",project()).put("p_offset",offset),account) else api.rpc("coll_pat_inspection_summary",JSONObject().put("p_project",project()).put("p_after",cursor?:JSONObject.NULL),account)
             db.withTransaction{for(row in page.getJSONArray("items").objects()){
                 val id=row.getString("id");val current=dao.visit(id,account)
+                if(dao.settingValue(account,"deleted:$id")!=null)continue
                 if(id in editing)continue
                 if(current!=null&&(current.sync!="RICEVUTO_SERVER"||dao.pendingVisit(id,account).isNotEmpty()))continue
                 val body=JSONObject(row.getJSONObject("original").toString()).put("server_revision",row.optInt("revision",0)).put("local_edit",0).put("shared_protocol",true)
@@ -307,24 +337,36 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         if(!authenticated())return@withLock true
         val account=owner()
         try{checkVersion();reconcile()}catch(e:ApiError){if(e.code==401||e.code==403){dao.pauseAuth(account);return@withLock true}else throw e}
+        val deleted=api.rpc("coll_pat_deleted",JSONObject().put("p_project",project()),account).getJSONArray("items").objects()
+        if(deleted.isNotEmpty())mutation.withLock{db.withTransaction{purgeRemoteMarkers(deleted)}}
         flushShared(account)
         for(op in dao.pending(account)){
             if(owner()!=account)return@withLock true
             // A terminal catalogue error blocks dependants until corrected; never send unknown assets.
-            if(!op.kind.startsWith("catalog")&&dao.allPending(account).any{it.kind in listOf("catalog","catalog_chunk")})continue
+            if(op.kind!="permanent_delete"&&!op.kind.startsWith("catalog")&&dao.allPending(account).any{it.kind in listOf("catalog","catalog_chunk")})continue
             if(op.kind=="catalog"&&dao.allPending(account).any{it.kind=="catalog_chunk"&&it.visitId==op.visitId})continue
+            if(op.kind in listOf("inspection","shared_inspection")){
+                val pointId=dao.visit(op.visitId,account)?.manholeId
+                if(dao.allPending(account).any{it.kind=="object_patch"&&it.visitId==pointId})continue
+            }
             if(op.kind=="cancel"&&dao.allPending(account).any{it.visitId==op.visitId&&it.kind in listOf("inspection","shared_inspection")})continue
+            if(op.kind!="permanent_delete"&&dao.allPending(account).any{it.kind=="permanent_delete"})continue
             try{
+                dao.setting(Setting(account,"attempt:"+op.operationId,Instant.now().toString()))
                 dao.updatePending(op.copy(state="IN_CORSO"))
                 if(op.kind=="catalog"||op.kind=="catalog_chunk"){
                     val batchFinal=if(op.kind=="catalog_chunk")dao.pendingVisit(op.visitId,account).firstOrNull{it.kind=="catalog"} else op
                     val p=batchFinal?.let{dao.settingValue(account,"catalog-upload:"+it.operationId)}?.let(::JSONObject)?:JSONObject(op.body).getJSONObject("payload")
                     p.optJSONArray("items")?.objects().orEmpty().forEach{dao.setting(Setting(account,"catalog-attempted:"+it.getJSONObject("data").getString("id"),"true"))}
                 }
-                val receipt=api.rpc(when(op.kind){"shared_inspection"->"coll_pat_save_inspection";"catalog_delete"->"coll_pat_delete_collector";else->"coll_pat_apply"},JSONObject().put("operation",JSONObject(op.body)),account)
+                val receipt=api.rpc(when(op.kind){"shared_inspection"->"coll_pat_save_inspection";"catalog_delete"->"coll_pat_delete_collector";"permanent_delete"->"coll_pat_delete_permanent";"object_patch"->"coll_pat_patch_object";else->"coll_pat_apply"},JSONObject().put("operation",JSONObject(op.body)),account)
                 check(receipt.getString("operation_id")==op.operationId&&receipt.getLong("generation")==op.generation&&receipt.getString("project_id")==op.project){"Ricevuta non corrispondente"}
                 db.withTransaction{
                     dao.acknowledge(op.operationId)
+                    dao.setting(Setting(account,"last-send-success",Instant.now().toString()))
+                    if(op.kind=="permanent_delete"){dao.setting(Setting(account,"deletion-operation:"+op.visitId,op.operationId));dao.setting(Setting(account,"deletion-state:"+op.visitId,if(receipt.optInt("storage_pending")>0)"Dati eliminati dal server · allegati in attesa di rimozione" else "Eliminazione definitiva confermata dal server"))}
+                    if(op.kind=="object_patch"&&dao.pendingVisit(op.visitId,account).isEmpty())dao.catalogNow(account).find{it.id==op.visitId}?.let{dao.putCatalog(it.copy(sync="RICEVUTO_SERVER"))}
+
                     dao.visit(op.visitId,account)?.let{latest->
                         val b=JSONObject(latest.body);val sent=JSONObject(op.body).getJSONObject("payload")
                         val changed=op.kind=="shared_inspection"&&b.optLong("local_edit")!=sent.optLong("local_edit")
@@ -339,11 +381,12 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
                             if(local!=null&&JSONObject(local.body).toString()==data.toString())dao.putCatalog(local.copy(sync="RICEVUTO_SERVER"))
                         }
                         sent.optJSONObject("provenance")?.let{p->dao.imports(account).find{it.id==p.getString("id")}?.let{dao.saveImport(it.copy(state="RICEVUTO_SERVER"))}}
+                        dao.removeSetting(account,"catalog-upload:"+op.operationId)
                     }
                 }
             }catch(e:CancellationException){throw e}catch(e:Exception){
-                val auth=e is ApiError&&e.code==401;val terminal=e is ApiError&&e.code in listOf(400,403,404,409,422)
-                val state=if(auth)"AUTH_REQUIRED" else if(terminal)"CONFLICT" else "IN_ATTESA"
+                val auth=e is ApiError&&e.code==401;val terminal=e is ApiError&&!e.retryable&&e.code!=401
+                val state=if(auth)"AUTH_REQUIRED" else if(e is ApiError&&e.code==409)"CONFLICT" else if(terminal)"BLOCKED" else "IN_ATTESA"
                 db.withTransaction{dao.updatePending(op.copy(state=state,error=friendlyError(e)));dao.visit(op.visitId,account)?.let{dao.save(it.copy(sync=state,error=friendlyError(e)))}}
                 if(auth){dao.pauseAuth(account);return@withLock true}
                 if(!terminal)return@withLock false
@@ -352,9 +395,16 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
             }
         }
         PhotoRepository(this).syncAll(account)
-        catalog();downloadHistory(false);dao.setting(Setting(account,"database-last-success",Instant.now().toString()));dao.visitsNow(account).none{it.sync=="IN_ATTESA"}
+        syncStorageDeletions(account)
+        catalogInternal();downloadHistoryInternal(false);dao.setting(Setting(account,"database-last-success",Instant.now().toString()));dao.allPending(account).isEmpty()&&dao.visitsNow(account).none{it.sync in listOf("IN_ATTESA","CONFLICT","BLOCKED","AUTH_REQUIRED")}&&PhotoRepository(this).pendingCount(account)==0
     }
-    suspend fun fieldSettings()=dao.settingValue(owner(),"field-settings-v014")?.let{FieldSettings.parse(JSONObject(it))}?:FieldSettings()
+    suspend fun fieldSettings():FieldSettings{
+        val raw=dao.settingValue(owner(),"field-settings-v014")?.let(::JSONObject)?:return FieldSettings()
+        val value=FieldSettings.parse(raw)
+        if(raw.optDouble("accuracy")!=value.maxAccuracy||raw.optDouble("distance")!=value.maxDistance){
+            dao.setting(Setting(owner(),"settings-normalized","Soglie GPS aggiornate: accuratezza ${value.maxAccuracy.toInt()} m, distanza ${value.maxDistance.toInt()} m. Le rilevazioni storiche mantengono le soglie originali."));saveSettings(value)
+        };return value
+    }
     suspend fun saveSettings(value:FieldSettings){dao.setting(Setting(owner(),"field-settings-v014",value.json().toString()))}
     private fun stampEdit(body:JSONObject,current:JSONObject){
         listOf("created_by","created_at","server_revision").forEach{key->if(current.has(key))body.put(key,current.get(key))}
@@ -364,7 +414,14 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         check(owner()==visit.owner){"Account cambiato: riapri la scheda"}
         val v=dao.visit(visit.id,visit.owner)?:error("Bozza non disponibile")
         check(v.operational=="BOZZA"&&v.sync!="CONFLICT"&&!isCancelled(v)){"Apri una bozza modificabile prima di aggiungere o rimuovere foto"}
-        val photos=change(PhotoRepository(this@Repository).list(v));check(photos.size<=100){"Sono consentite al massimo 100 foto per ispezione"}
+        val previousPhotos=PhotoRepository(this@Repository).list(v)
+        val photos=change(previousPhotos);check(photos.size<=100){"Sono consentite al massimo 100 foto per ispezione"}
+        val removed=previousPhotos.filter{old->photos.none{it.getString("photoId")==old.getString("photoId")}}
+        if(removed.isNotEmpty()){
+            val key="photo-revision:"+visit.id
+            val prior=dao.settingValue(visit.owner,key)?.let{JSONArray(it).objects()}.orEmpty()
+            dao.setting(Setting(visit.owner,key,JSONArray((prior+removed).distinctBy{it.getString("photoId")}).toString()))
+        }
         dao.setting(Setting(visit.owner,"photos:"+visit.id,JSONArray(photos).toString()))
         val b=JSONObject(v.body);stampEdit(b,JSONObject(v.body));dao.save(v.copy(body=b.toString(),sync=if(authenticated())"IN_ATTESA" else v.sync))
     };syncNow()}
@@ -433,6 +490,6 @@ class SyncWorker(context:Context,params:WorkerParameters):CoroutineWorker(contex
     override suspend fun doWork():Result{
         val repo=(applicationContext as PilotApplication).repository
         if(repo.store.get()==null)return Result.success()
-        return try{if(repo.sync())Result.success()else Result.retry()}catch(e:CancellationException){throw e}catch(e:Exception){Result.retry()}
+        return try{if(repo.sync()||runAttemptCount>=5||repo.dao.allPending(repo.owner()).none{it.state=="IN_ATTESA"}&&PhotoRepository(repo).pendingCount(repo.owner())==0)Result.success()else Result.retry()}catch(e:CancellationException){throw e}catch(e:Exception){if(runAttemptCount>=5||e is ApiError&&!e.retryable)Result.failure()else Result.retry()}
     }
 }

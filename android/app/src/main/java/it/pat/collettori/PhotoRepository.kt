@@ -50,9 +50,12 @@ class PhotoRepository(private val repo:Repository) {
         combined.addAll(local.values.filter{p->combined.none{it.getString("photoId")==p.getString("photoId")}&&p.optString("storagePath").isBlank()})
         repo.dao.setting(Setting(account,"photos:$id",JSONArray(combined).toString()))
     }
+    suspend fun pendingCount(account:String)=repo.dao.visitsNow(account).sumOf{v->list(v).count{it.optString("uploadStatus")!="UPLOADED"&&it.optString("localUri").isNotBlank()}}
     suspend fun syncAll(account:String){
         for(v in repo.dao.visitsNow(account).filter{it.sync=="RICEVUTO_SERVER"&&!isCancelled(it)})for(p in list(v)){
-            if(p.optString("uploadStatus")=="UPLOADED"||p.optString("localUri").isBlank())continue
+            if(p.optString("uploadStatus") in setOf("UPLOADED","BLOCKED")||p.optString("localUri").isBlank())continue
+            try{
+            update(v,p,"IN_CORSO")
             val objectPath=path(repo.project(),v.id,p.getString("photoId"))
             val data=withContext(Dispatchers.IO){
                 val uri=Uri.parse(p.getString("localUri"));val bounds=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true}
@@ -65,10 +68,17 @@ class PhotoRepository(private val repo:Repository) {
             }?:error("Foto non disponibile sul telefono")}
             check(data.size<=6*1024*1024){"Foto troppo grande: ridurre l’immagine a meno di 6 MB"}
             try{repo.api.request("/storage/v1/object/coll-pat-photos/$objectPath",expectedOwner=account,bytes=data)}catch(e:ApiError){if(e.code!=409&&!(e.code==400&&e.message?.contains("already exists",true)==true))throw e}
+            update(v,p,"UPLOADED_UNCONFIRMED")
             repo.api.rpc("coll_pat_photo_uploaded",JSONObject().put("p_project",repo.project()).put("p_inspection",v.id).put("p_id",p.getString("photoId")),account)
             repo.db.withTransaction{val current=list(v);current.find{it.getString("photoId")==p.getString("photoId")}?.put("storagePath",objectPath)?.put("uploadStatus","UPLOADED");repo.dao.setting(Setting(account,"photos:"+v.id,JSONArray(current).toString()))}
+            }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){update(v,p,if(e is ApiError&&!e.retryable&&e.code!=401)"BLOCKED" else if(e is ApiError&&e.code==401)"AUTH_REQUIRED" else "PENDING",friendlyError(e))}
+
         }
     }
+    private suspend fun update(v:Visit,p:JSONObject,state:String,error:String?=null){repo.db.withTransaction{
+        val current=list(v);current.find{it.getString("photoId")==p.getString("photoId")}?.put("uploadStatus",state)?.put("lastAttempt",Instant.now().toString())?.put("error",error?:JSONObject.NULL)
+        repo.dao.setting(Setting(v.owner,"photos:"+v.id,JSONArray(current).toString()))
+    }}
     suspend fun localUri(visit:Visit,photo:JSONObject):Uri?=withContext(Dispatchers.IO){
         if(photo.optString("localUri").isNotBlank())return@withContext Uri.parse(photo.getString("localUri"))
         if(photo.optString("uploadStatus")!="UPLOADED"||!repo.authenticated())return@withContext null

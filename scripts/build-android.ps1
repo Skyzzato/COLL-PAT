@@ -2,7 +2,7 @@ param([switch]$Instrumented, [switch]$Full)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $androidRoot = Join-Path $projectRoot 'android'
-$buildRoot = Join-Path $androidRoot 'app\build-v02'
+$buildRoot = Join-Path $androidRoot 'app\build-v021'
 # Normalize only generated build attributes. Never touch application data or other projects.
 if (Test-Path -LiteralPath $buildRoot) {
     $buildItems = @(Get-Item -LiteralPath $buildRoot) + @(Get-ChildItem -LiteralPath $buildRoot -Recurse -Force)

@@ -24,6 +24,7 @@ import kotlinx.coroutines.*
 import kotlin.coroutines.coroutineContext
 
 interface InspectionCapture {
+    val status:String get()=""
     suspend fun acquire(inspection:JSONObject,rule:Rule,progress:(Int)->Unit):JSONObject
     fun cancel()
 }
@@ -32,6 +33,7 @@ class LocationCapture(private val context:Context):EvidenceCollector,InspectionC
     private var requestCancellation:CancellationTokenSource?=null
     @Volatile private var userCancelled=false
     private var acquisitionJob:Job?=null
+    override var status:String="";private set
     override fun cancel(){userCancelled=true;requestCancellation?.cancel();acquisitionJob?.cancel()}
     @Suppress("DEPRECATION")
     private fun Location.sample()=GpsSample(elapsedRealtimeNanos,latitude,longitude,if(hasAccuracy())accuracy.toDouble() else null,if(Build.VERSION.SDK_INT>=31)isMock else isFromMockProvider)
@@ -44,19 +46,18 @@ class LocationCapture(private val context:Context):EvidenceCollector,InspectionC
         val client=LocationServices.getFusedLocationProviderClient(context)
         var callback:LocationCallback?=null
         try{
-            val preliminary=withTimeoutOrNull(2500){client.lastLocation.await()}?.sample()
-            if(!AcquisitionPolicy.fresh(preliminary,SystemClock.elapsedRealtimeNanos())){
-                val refreshed=collect(inspection,rule)
-                error(if(refreshed.isNull("error"))"Localizzazione aggiornata. Premi di nuovo Rileva posizione per avviare l’acquisizione." else "Nessuna misura recente. "+refreshed.optString("error"))
-            }
-            AcquisitionPolicy.validate(preliminary,SystemClock.elapsedRealtimeNanos(),rule.accuracy)?.let{error(it)}
+            userCancelled=false
             val start=SystemClock.elapsedRealtimeNanos();val wallStart=Instant.now().toString();val window=GpsWindow(start,rule.accuracy)
             callback=object:LocationCallback(){override fun onLocationResult(result:LocationResult){result.locations.forEach{window.add(it.sample(),SystemClock.elapsedRealtimeNanos())}}}
             val request=LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,1000).setMinUpdateIntervalMillis(500).setMaxUpdateDelayMillis(0).setMaxUpdateAgeMillis(0).build()
             client.requestLocationUpdates(request,callback,Looper.getMainLooper()).await()
-            while(SystemClock.elapsedRealtimeNanos()-start<AcquisitionPolicy.DURATION_NS){
-                ensureActiveCapture();window.failure?.let{error(it)}
-                progress(((AcquisitionPolicy.DURATION_NS-(SystemClock.elapsedRealtimeNanos()-start)+999_999_999)/1_000_000_000).toInt().coerceIn(0,5));delay(100)
+            while(!window.ready(SystemClock.elapsedRealtimeNanos())){
+                ensureActiveCapture()
+                val elapsed=SystemClock.elapsedRealtimeNanos()-start
+                check(elapsed<AcquisitionPolicy.TIMEOUT_NS){"Timeout: nessun rilievo GPS utilizzabile. Riprova oppure scegli Non rilevare GPS."}
+                status="${window.count} misure · accuratezza media "+(window.meanAccuracy?.let{"±%.1f m".format(it)}?:"in attesa")
+                window.centroid()?.let{(lat,lon)->if(inspection.has("target_latitude"))status+=" · distanza %.1f m".format(GpsRule.distance(lat,lon,inspection.getDouble("target_latitude"),inspection.getDouble("target_longitude")))}
+                progress(((elapsed)/1_000_000_000).toInt());delay(100)
             }
             ensureActiveCapture()
             return window.finish(SystemClock.elapsedRealtimeNanos()).put("id",UUID.randomUUID().toString())

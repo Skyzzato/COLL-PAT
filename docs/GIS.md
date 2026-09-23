@@ -1,5 +1,11 @@
 # GIS sul telefono — COLL-PAT v0.2
 
+## Aggiornamento v0.21
+
+In v0.21 i soli punti propongono ORDERED; in assenza di ordine affidabile si usa la guida o si sceglie esplicitamente ISOLATED. Dopo eliminazione definitiva la stessa source_identity ottiene un nuovo UUID; gli UUID ritirati restano bloccati. [Requisiti correnti](REQUIREMENTS-v0.21.md).
+
+## Documentazione delle versioni precedenti
+
 Accesso nei sorgenti aggiornati: **Impostazioni → Dati cartografici → Importa shapefile**. L'app opera esclusivamente sul progetto server: occorre il ruolo `admin`, verificato anche dalle RPC Supabase; `inspector` non può importare. Nessuna chiave amministrativa viene inserita nel client.
 
 Flusso normale: selettore Android OpenDocument → copia privata ZIP → lettura nativa Kotlin → rilevamento layer/campi/CRS → scelta automatica di tipo, mapping, modalità e collettore → anteprima MapLibre e rapporto → conferma → transazione Room → outbox Supabase. Se manca il collettore, l'app ne crea uno automatico con UUID stabile dalla sorgente. **Opzioni avanzate** consente di correggere mapping, codifica, CRS e tolleranza. Nessun Python/FastAPI richiesto sul telefono e nessuna nuova libreria Android; parser originale secondo [specifica ESRI](https://www.esri.com/library/whitepapers/pdfs/shapefile.pdf).

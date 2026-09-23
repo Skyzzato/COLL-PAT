@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
             if(busy){CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp);Spacer(Modifier.width(8.dp))}
             Text("Aggiorna database collettori")
         }
+        Text("Scarica catalogo e ispezioni condivise. Le modifiche locali restano in coda.",style=MaterialTheme.typography.bodySmall)
         Text(lastRefreshLabel(stamp),style=MaterialTheme.typography.bodySmall)
     }
 }

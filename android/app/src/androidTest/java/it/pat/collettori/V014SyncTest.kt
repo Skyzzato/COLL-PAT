@@ -31,6 +31,7 @@ class V014SyncTest {
         val client=OkHttpClient.Builder().addInterceptor{chain->
             val req=chain.request();val buffer=Buffer();req.body?.writeTo(buffer);val args=if(buffer.size>0)JSONObject(buffer.readUtf8())else JSONObject();var code=200
             val result=when(req.url.encodedPath.substringAfterLast('/')){
+                "coll_pat_deleted","coll_pat_storage_pending"->JSONObject().put("items",JSONArray())
                 "coll_pat_version"->JSONObject().put("minimum_supported_version","0.14").put("latest_version","0.14")
                 "coll_pat_status"->JSONObject().put("generation",0).put("role","inspector")
                 "coll_pat_catalog"->{val items=JSONArray();listOf("collectors" to "collector","points" to "point","segments" to "segment").forEach{(array,kind)->seed.getJSONArray(array).objects().forEach{items.put(JSONObject().put("kind",kind).put("data",it))}};JSONObject().put("items",items).put("archived",JSONArray()).put("has_more",false).put("revision",1)}
@@ -57,7 +58,7 @@ class V014SyncTest {
         try{
             repo.prepareWorkspace();val downloaded=repo.catalog();assertEquals(1,downloaded.getJSONArray("points").length());assertEquals("gps-1",Rule.parse(downloaded.getJSONObject("rule")).version);val pack=repo.dao.pack(repo.owner(),AppSpec.PACKAGE)!!;val point=JSONObject(pack.body).getJSONArray("points").getJSONObject(0);val v=repo.begin(point,pack,"LIST")
             val event=JSONObject().put("id",UUID.randomUUID().toString()).put("acquired_at","2026-09-22T10:00:00Z").put("latitude",point.getDouble("latitude")).put("longitude",point.getDouble("longitude")).put("accuracy_m",5).put("age_s",0).put("permission","PRECISE").put("applied_limits",JSONObject().put("max_accuracy_m",10).put("radius_m",15)).put("local_evaluation",JSONObject().put("state","COMPATIBILE").put("distance_m",0))
-            repo.appendEvent(v.id,event.put("inspection_id",v.id).put("manhole_id",v.manholeId).put("method",AcquisitionPolicy.METHOD).put("sample_count",5).put("duration_ms",5000).put("sample_span_ms",4000).put("match_outcome","VERIFIED"))
+            repo.appendEvent(v.id,testEvidence(v,point.getDouble("latitude"),point.getDouble("longitude")))
             val sending=async(Dispatchers.IO){repo.sync()}
             assertTrue(entered.await(15,TimeUnit.SECONDS))
             val body=JSONObject(repo.dao.visit(v.id,v.owner)!!.body);body.getJSONObject("sheet").put("notes","Final notes while draft upload is in flight")

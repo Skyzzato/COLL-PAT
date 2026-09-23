@@ -50,7 +50,7 @@ class V014FunctionalTest {
             assertEquals(settings,FieldSettings.parse(settings.json()))
             val style=JSONObject(localStyle(pack,points,null,null,settings));val layers=style.getJSONArray("layers").objects().associateBy{it.getString("id")}
             val holes=layers.getValue("manholes")
-            assertEquals("symbol",holes.getString("type"));assertEquals(symbol.imageId,holes.getJSONObject("layout").getString("icon-image"))
+            assertEquals("symbol",holes.getString("type"));assertEquals("symbol",holes.getJSONObject("layout").getJSONArray("icon-image").getString(1))
             assertEquals(.7,holes.getJSONObject("layout").getDouble("icon-size"),1e-8)
             assertEquals("status_color",holes.getJSONObject("paint").getJSONArray("icon-color").getString(1))
             assertEquals(17.0,holes.getDouble("minzoom"),0.0);assertFalse(layers.getValue("pipes").has("minzoom"))
