@@ -35,7 +35,7 @@ Verifica remota read-only: `coll_pat_version` HTTP 200 (minimo 0.14, ultima 0.2)
 
 ## Stato remoto e limiti
 
-**Migrazioni 008/009 non applicate al progetto remoto, pulizia dati archiviati non eseguita, oggetti Storage reali non eliminati e indicazione latest_version non aggiornata.** Seguire [MIGRATIONS-v0.21](MIGRATIONS-v0.21.md). L'APK conserva il lavoro locale, ma le nuove RPC richiedono l'intervento amministrativo prima del collaudo operativo.
+**Aggiornamento del 23/09/2026: migrazioni 008/009 applicate e verificate sul progetto remoto; latest_version 0.21 e minimo 0.14. Pulizia dati archiviati e cancellazione file Storage non eseguite.** Vedere [DEPLOYMENT-v0.21](DEPLOYMENT-v0.21.md) e [MIGRATIONS-v0.21](MIGRATIONS-v0.21.md). Le verifiche amministrative delle RPC sono concluse; il collaudo operativo sui dispositivi resta distinto.
 
 Nessuna prova su due telefoni reali o GPS sul campo. Server HTTP controllato e PostgreSQL locale non dimostrano il funzionamento del deployment remoto. Il percorso completo import/cancella/reimport dal picker Android, la ricreazione del modulo punto in tutte le fasi e le collisioni ad ogni zoom restano da provare: [rapporto UX](UX-REVIEW-v0.21.md).
 

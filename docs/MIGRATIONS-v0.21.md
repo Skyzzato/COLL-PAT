@@ -4,13 +4,13 @@
 
 | Operazione | Locale di test | Progetto remoto |
 |---|---|---|
-| Migrazione 008 — ciclo di vita | Applicata due volte per verificare ripetibilità | Non applicata in questa sessione |
-| Migrazione 009 — GPS e proprietà limitate | Applicata due volte per verificare ripetibilità | Non applicata in questa sessione |
+| Migrazione 008 — ciclo di vita | Applicata due volte per verificare ripetibilità | Applicata e verificata il 23/09/2026 |
+| Migrazione 009 — GPS e proprietà limitate | Applicata due volte per verificare ripetibilità | Applicata e verificata il 23/09/2026 |
 | Pulizia archivi pregressi | Verificata con fixture sintetiche | Non eseguita |
 | Cancellazione file Storage reali | Policy/contratto SQL controllati | Non eseguita |
-| Annuncio versione disponibile | Nessuna modifica automatica nelle migrazioni | Non aggiornato |
+| Annuncio versione disponibile | Nessuna modifica automatica nelle migrazioni | Latest 0.21; minimo 0.14 invariato |
 
-La connessione amministrativa tentata ha restituito `InsufficientPrivilege`, SQLSTATE `42501`, durante una lettura dello schema COLL-PAT. Non è stata usata come prova di indisponibilità del server e non sono stati aggirati i permessi. Nessun conteggio remoto è disponibile. Una successiva verifica delle RPC in sola lettura ha accertato: `coll_pat_version` HTTP 200, minimo 0.14 e ultima 0.2; `coll_pat_status` senza sessione HTTP 401/42501; le nuove `coll_pat_deleted` e `coll_pat_deletion_preview` HTTP 404/PGRST202. Il servizio risponde, ma il nuovo contratto non è esposto. Non inserire DSN, password o service key nei documenti o nell'APK.
+L'applicazione remota è stata completata tramite la sessione amministrativa Supabase. La connessione locale `collettori_backend` non dispone dei permessi necessari ed è stata usata soltanto per la diagnosi. Verifiche e limiti dell'intervento sono descritti in [DEPLOYMENT-v0.21](DEPLOYMENT-v0.21.md). Nessuna credenziale amministrativa è stata salvata nel repository o nell'APK.
 
 ## Applicazione strutturale
 

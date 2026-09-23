@@ -2,7 +2,7 @@
 
 Aggiornamento Android della v0.2: eliminazione definitiva con anteprima e coda, reimportazione con nuovi UUID, collegamenti ordinati, aspetto per oggetto, coordinate su mappa, GPS con stabilizzazione/media e mancato rilievo motivato, note unificate, condizione sotto asfalto persistente e coda di sincronizzazione consultabile.
 
-**Il server remoto non espone ancora le nuove RPC (404/PGRST202). Le migrazioni 008 e 009 e la pulizia degli archivi non sono state eseguite sul progetto remoto per mancanza di privilegi amministrativi. Applicare le istruzioni allegate prima del collaudo operativo; la versione annunciata dal server resta 0.2.**
+**Aggiornamento remoto del 23/09/2026: migrazioni 008/009 applicate e verificate, nuove RPC disponibili, versione annunciata 0.21 e minima 0.14. Pulizia archivi non eseguita.** [Esito deployment](DEPLOYMENT-v0.21.md).
 
 - VersionName 0.21, versionCode 21, application ID `it.pat.collettori.pilot`; stessa firma della v0.2, Room 3 invariata.
 - 108 test Kotlin, 117 test backend/SQL nella suite completa e 16 test SQL v0.21 dopo gli ultimi controlli; 35 test Android, con ripetizione mirata delle 9 prove di cancellazione dopo l'ultima modifica dei conteggi. Lint e build superati.

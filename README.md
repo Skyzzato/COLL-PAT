@@ -4,7 +4,7 @@ App Android per cartografia, pozzetti, ispezioni periodiche, GPS e fotografie, c
 
 [Prerelease v0.21](https://github.com/Skyzzato/COLL-PAT/releases/tag/v0.21) · [APK](https://github.com/Skyzzato/COLL-PAT/releases/download/v0.21/COLL-PAT-v0.21.apk) · [Collaudo](docs/VALIDATION-v0.21.md) · [Ergonomia](docs/UX-REVIEW-v0.21.md) · [Requisiti](docs/REQUIREMENTS-v0.21.md)
 
-**Il server richiede le nuove migrazioni 008 e 009. In questa consegna sono applicate e verificate soltanto su PostgreSQL locale: l'accesso remoto disponibile restituisce SQLSTATE 42501. Migrazioni remote, pulizia degli archivi e aggiornamento della versione annunciata non sono stati eseguiti.** [Procedura amministrativa](docs/MIGRATIONS-v0.21.md).
+**Migrazioni 008 e 009 applicate e verificate anche sul server remoto. Versione disponibile 0.21, minima 0.14; pulizia degli archivi non eseguita.** [Esito deployment](docs/DEPLOYMENT-v0.21.md) · [Procedura amministrativa](docs/MIGRATIONS-v0.21.md).
 
 ## Uso
 
