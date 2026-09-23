@@ -12,7 +12,7 @@ import java.util.zip.ZipOutputStream
 
 class V014FunctionalTest {
     private val now=Instant.parse("2026-09-22T12:00:00Z")
-    private fun demo()=JSONObject(javaClass.classLoader!!.getResource("demo-package.json")!!.readText())
+    private fun demo()=JSONObject(javaClass.classLoader!!.getResource("trento-lavis-gilli-v0.14.json")!!.readText())
     private fun visit(id:String,at:String,status:String="COMPLETO")=Visit(id,"owner","point","data",JSONObject().put("started_at",at).put("completed_at",at).put("events",JSONArray()).put("sheet",Repository.defaultSheet()).toString(),status)
     private fun archive(name:String="points")=javaClass.classLoader!!.getResourceAsStream("gis/$name.zip")!!.use{Shapefile.read(it)}
     private val collector=collectorDefaults("00000000-0000-4000-8000-000000000013","TEST","Synthetic")
@@ -30,21 +30,15 @@ class V014FunctionalTest {
         assertEquals(setOf("first","impeded"),InspectionCsv.rows(rows,now).map{it.id}.toSet())
         assertTrue(InspectionCsv.rows(rows.filter{it.id !in setOf("first","impeded")},now).isEmpty())
     }
-    @Test fun seedRestoresOnlyMissingIdsAndDoesNotOverwriteLocalChanges(){
-        val seed=DemoMode.missingCatalog(demo(),emptyList())
-        assertEquals(3,seed.count{it.kind=="collector"});assertEquals(22,seed.count{it.kind=="point"});assertEquals(19,seed.count{it.kind=="segment"})
-        assertTrue(DemoMode.missingCatalog(demo(),seed).isEmpty())
-        val modified=seed.map{if(it.kind=="collector")it.copy(body=JSONObject(it.body).put("archived",true).put("description","Local changes").toString())else it}
-        assertTrue(DemoMode.missingCatalog(demo(),modified).isEmpty())
-        assertEquals(seed.last().id,DemoMode.missingCatalog(demo(),modified.dropLast(1)).single().id)
-        assertEquals(seed.size,DemoMode.missingCatalog(demo(),seed.map{it.copy(owner="remote-account")}).size)
+    @Test fun serverSeedFixtureHasStableCompleteIds(){
+        val d=demo();val items=listOf("collectors" to "collector","points" to "point","segments" to "segment").flatMap{(name,kind)->d.getJSONArray(name).objects().map{CatalogItem("server",it.getString("id"),kind,it.toString())}}
+        assertEquals(3,items.count{it.kind=="collector"});assertEquals(22,items.count{it.kind=="point"});assertEquals(19,items.count{it.kind=="segment"})
+        assertEquals(items.size,items.map{it.id}.toSet().size);assertTrue(items.all{java.util.UUID.fromString(it.id)!=null})
     }
     @Test fun serverInspectorCannotAcquireRightsFromDemoBuild(){
         val session=JSONObject().put("base","https://example.supabase.co").put("access_token","public-test-token").put("protocol",2).put("role","inspector")
-        assertFalse(mayManageCatalog(session,true));assertFalse(mayManageCatalog(session,false))
-        assertTrue(mayManageCatalog(session.put("role","admin"),false))
-        assertFalse(mayManageCatalog(JSONObject(session.toString()).put("protocol",1),true))
-        assertTrue(mayManageCatalog(DemoMode.session(),true));assertFalse(mayManageCatalog(DemoMode.session(),false));assertFalse(mayManageCatalog(null,true))
+        assertFalse(mayManageCatalog(session));assertTrue(mayManageCatalog(session.put("role","admin")))
+        assertFalse(mayManageCatalog(JSONObject(session.toString()).put("protocol",1)));assertFalse(mayManageCatalog(null))
     }
     @Test fun sevenDistinctShapesRoundTripAndKeepStatusColorsIndependent(){
         assertEquals(7,ManholeSymbol.entries.size)

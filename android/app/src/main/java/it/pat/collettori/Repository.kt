@@ -47,32 +47,15 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
             put("priority","MEDIA");put("technical_origin","NON_NOTO")
         }
     }
-    fun owner()=store.get()?.let{if(it.optString("base")==DemoMode.base)DemoMode.owner else sessionOwner(it)}?:error("Accesso richiesto")
+    fun owner()=store.get()?.let(::sessionOwner)?:error("Accesso richiesto")
     fun project()=store.get()?.optString("project_id",AppSpec.LOCAL_PROJECT)?:AppSpec.LOCAL_PROJECT
     fun authenticated()=store.get()?.let{it.has("access_token")&&it.optInt("protocol")==AppSpec.PROTOCOL}==true
-    fun canManageCatalog()=mayManageCatalog(store.get(),BuildConfig.DEV_ADMIN)
+    fun canManageCatalog()=mayManageCatalog(store.get())
     fun checkOffline(){check(store.get()!=null){"Accesso richiesto"}}
-    private suspend fun generation(account:String)=dao.settingValue(account,"generation")?.toLong()?:if(account==DemoMode.owner)0L else -1L
-    suspend fun prepareDemo(switchAccount:Boolean=false)=syncLock.withLock{mutation.withLock{
-        check(BuildConfig.DEMO){"Dati dimostrativi disponibili soltanto nella variante demo"}
-        if(switchAccount||store.get()==null)store.save(DemoMode.session())
-        prepareWorkspace()
-    }}
+    private suspend fun generation(account:String)=dao.settingValue(account,"generation")?.toLong()?:-1L
     suspend fun prepareWorkspace(){
-        // Demo entry is explicit from login or Account; server owners never receive the seed.
         if(store.get()==null)return
         val account=owner()
-        if(dao.settingValue(account,"catalog")==null){val rule=JSONObject(context.assets.open("gps-rule.json").bufferedReader().use{it.readText()});dao.setting(Setting(account,"catalog",DemoMode.catalog(rule).toString()))}
-        if(BuildConfig.DEMO&&account==DemoMode.owner){
-            val text=context.assets.open("demo-package.json").bufferedReader().use{it.readText()};val data=JSONObject(text);DemoMode.validateDataset(data)
-            db.withTransaction{
-                val missing=DemoMode.missingCatalog(data,dao.catalogNow(account))
-                missing.forEach{dao.putCatalog(it)}
-                if(missing.isNotEmpty()||dao.pack(account,AppSpec.PACKAGE)==null)rebuildPackage(account)
-                if(dao.settingValue(account,"seed-v014")==null){seedExampleInspections(data);dao.setting(Setting(account,"seed-v014","done"))}
-                dao.setting(Setting(account,"catalog-state","Demo locale · Trento, Lavis e Via Gilli"))
-            }
-        }
         // Never assign new reset generations to v0.12 data or outbox operations.
         if(dao.settingValue(account,"legacy-backed-up")==null){
             val old=dao.visitsNow(account).filter{!JSONObject(it.body).has("payload_version")}
@@ -82,10 +65,11 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     }
     suspend fun rebuildPackage(account:String){
         val items=dao.catalogNow(account);val body=JSONObject().put("version",AppSpec.PACKAGE).put("area_id",project()).put("name",AppSpec.NAME).put("osm",true).put("basemap",JSONObject.NULL).put("attribution","© OpenStreetMap contributors · ODbL")
+            .put("rule",JSONObject(context.assets.open("gps-rule.json").bufferedReader().use{it.readText()}))
         listOf("collectors" to "collector","points" to "point","segments" to "segment").forEach{(key,kind)->body.put(key,JSONArray(items.filter{it.kind==kind}.map{JSONObject(it.body)}))}
         val raw=body.toString();dao.install(OfflinePackage(account,AppSpec.PACKAGE,project(),raw,sha256(raw.toByteArray()),raw.toByteArray().size.toLong(),Instant.now().toString(),true))
     }
-    suspend fun localCatalog():JSONObject?=dao.settingValue(owner(),"catalog")?.let(::JSONObject)
+    suspend fun localCatalog():JSONObject?=dao.pack(owner(),AppSpec.PACKAGE)?.body?.let(::JSONObject)
     suspend fun snapshot(v:Visit):JSONObject=dao.settingValue(v.owner,"snapshot:"+v.id)?.let(::JSONObject)?:JSONObject(dao.pack(v.owner,v.datasetId)?.body?:error("Anagrafica originaria non disponibile"))
     suspend fun begin(point:JSONObject,pack:OfflinePackage,method:String):Visit=mutation.withLock{
         checkOffline();val account=owner();val id=UUID.randomUUID().toString();val s=store.get()!!
@@ -339,17 +323,6 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         val policy=try{withTimeoutOrNull(5000){JSONObject(String(api.raw(base,"/rest/v1/rpc/coll_pat_version",key,body=JSONObject()))).also{compareVersions(AppSpec.version,it.getString("minimum_supported_version"));dao.setting(Setting(cacheOwner,"policy",it.toString()))}}?:cached}catch(e:CancellationException){throw e}catch(_:Exception){cached}
         if(policy!=null&&compareVersions(AppSpec.version,policy.getString("minimum_supported_version"))<0)throw ApiError(426,policy.optString("message","Installa l’aggiornamento di COLL-PAT."))
         return policy
-    }
-    private suspend fun seedExampleInspections(data:JSONObject){
-        if(owner()!=DemoMode.owner)return
-        val points=data.getJSONArray("points").objects().filter{it.optString("code").startsWith("GL-")}
-        points.take(4).forEachIndexed{i,p->
-            val id=UUID.nameUUIDFromBytes(("v014-example-"+p.getString("id")).toByteArray()).toString();if(dao.visit(id,owner())==null){
-                val at=Instant.now().minusSeconds((if(i%2==0)20L else 120L)*86400).toString()
-                val b=JSONObject().put("id",id).put("manhole_id",p.getString("id")).put("dataset_id",AppSpec.PACKAGE).put("user_id",DemoMode.user).put("created_by",DemoMode.user).put("started_at",at).put("completed_at",at).put("created_at",at).put("submitted_at",at).put("model","ORDINARY").put("status","COMPLETO").put("periodic_control",true).put("generation",0).put("synthetic",true).put("events",JSONArray()).put("sheet",defaultSheet().put("anomaly_note",if(i>=2)"Esempio sintetico: anomalia del chiusino" else ""))
-                dao.save(Visit(id,owner(),p.getString("id"),AppSpec.PACKAGE,b.toString(),"COMPLETO","DEMO_LOCALE"))
-            }
-        }
     }
     fun syncNow(){WorkManager.getInstance(context).enqueueUniqueWork("coll-pat-send",ExistingWorkPolicy.KEEP,OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).setBackoffCriteria(BackoffPolicy.EXPONENTIAL,30,TimeUnit.SECONDS).build())}
     fun schedule(){val work=WorkManager.getInstance(context);work.cancelUniqueWork("periodic-sync");work.cancelUniqueWork("send-current-account");work.enqueueUniquePeriodicWork("coll-pat-periodic",ExistingPeriodicWorkPolicy.KEEP,PeriodicWorkRequestBuilder<SyncWorker>(15,TimeUnit.MINUTES).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build());syncNow()}

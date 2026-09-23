@@ -45,7 +45,7 @@ class MainActivity:ComponentActivity(){override fun onCreate(savedInstanceState:
 @Composable fun Field(label:String,value:String,onChange:(String)->Unit){OutlinedTextField(value=value,onValueChange=onChange,label={Text(label)},modifier=Modifier.fillMaxWidth().padding(vertical=4.dp))}
 fun shown(s:String?):String=try{DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss").withZone(ZoneId.of("Europe/Rome")).format(Instant.parse(s))}catch(e:Exception){s?:"—"}
 fun operational(s:String)=when(s){"BOZZA"->"Bozza";"COMPLETO"->"Controllo dichiarato completo";"PARZIALE"->"Parziale";"IMPEDITO"->"Impedimento";else->s}
-fun syncLabel(s:String)=when(s){"DEMO_LOCALE"->"Demo salvata sul telefono · nessun invio";"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_ATTESA"->"In attesa di invio";"INVIO_IN_CORSO"->"Invio in corso";"RICEVUTO_SERVER"->"Ricevuto dal server";"AUTH_REQUIRED"->"Accesso Auth richiesto";"CONFLICT"->"Conflitto: intervento richiesto";"RESET_OBSOLETE"->"Sospeso: precedente al reset";else->"Errore da risolvere"}
+fun syncLabel(s:String)=when(s){"SALVATO_LOCALMENTE"->"Salvato localmente";"IN_ATTESA"->"In attesa di invio";"INVIO_IN_CORSO"->"Invio in corso";"RICEVUTO_SERVER"->"Ricevuto dal server";"AUTH_REQUIRED"->"Accesso Auth richiesto";"CONFLICT"->"Conflitto: intervento richiesto";"RESET_OBSOLETE"->"Sospeso: precedente al reset";else->"Errore da risolvere"}
 
 @Composable fun NetworkStatus():Boolean{
     val context=LocalContext.current

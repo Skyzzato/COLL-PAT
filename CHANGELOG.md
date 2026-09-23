@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.16 — catalogo server e importazione automatica (pre-release)
+
+- Rimossa la variante e l'archivio demo locali: l'app usa l'identità `it.pat.collettori.pilot` e richiede un progetto server autorizzato.
+- Pubblicati nel progetto COLL-PAT i tre collettori sintetici Trento, Lavis e Via Gilli, con 22 manufatti e 19 tronchi, tramite migrazione additiva e idempotente.
+- L'importazione ZIP/shapefile ora sceglie automaticamente tipo, mapping, collettore e modalità; se manca il collettore crea un collettore automatico stabile. Mapping, codifica, CRS e tolleranza restano disponibili nelle opzioni avanzate.
+- Restano bloccanti i dati che non consentono un'acquisizione affidabile: CRS non risolvibile, chiave assente/non stabile e geometrie o capi ambigui.
+- Corretto il catalogo al primo accesso server e incluso sempre il contratto GPS nel pacchetto locale; rimossi i riferimenti alle impostazioni create dal seed demo.
+- Versione 0.16, versionCode 16. La precedente APK demo conserva la propria identità e non viene aggiornata in-place.
+
 ## v0.15 — importazione guidata e acquisizione GPS (pre-release)
 
 - Incluse le correzioni funzionali v0.14: demo idempotente Trento/Lavis/Gilli, trimestre civile, sette simboli e accesso admin all’importazione.

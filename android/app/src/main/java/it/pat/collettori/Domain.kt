@@ -24,11 +24,7 @@ fun isCancelled(v:Visit)=JSONObject(v.body).has("cancelled")
 fun periodic(v:Visit)=!isCancelled(v)&&v.operational=="COMPLETO"&&JSONObject(v.body).optBoolean("periodic_control")
 fun visitDay(v:Visit)=Instant.parse(JSONObject(v.body).optString("completed_at",JSONObject(v.body).getString("started_at"))).atZone(ZoneId.of("Europe/Rome")).toLocalDate()
 fun semester(instant:Instant):String {val d=instant.atZone(ZoneId.of("Europe/Rome"));return "${d.year}-S${if(d.monthValue<=6)1 else 2}"}
-fun mayManageCatalog(session:JSONObject?,localAdminEnabled:Boolean):Boolean = when {
-    session==null->false
-    session.optString("base")==DemoMode.base->localAdminEnabled
-    else->session.has("access_token")&&session.optInt("protocol")==AppSpec.PROTOCOL&&session.optString("role")=="admin"
-}
+fun mayManageCatalog(session:JSONObject?):Boolean = session?.has("access_token")==true&&session.optInt("protocol")==AppSpec.PROTOCOL&&session.optString("role")=="admin"
 fun hasAnomaly(body:JSONObject)=body.getJSONObject("sheet").let{s->s.optString("anomaly_note").isNotBlank()||(Repository.observationKeys+externalKeys).any{s.optString(it)=="ANOMALO"}||s.optBoolean("raise_needed")||s.optBoolean("road_repair_needed")}
 val externalKeys=listOf("surface","subsidence")
 val collectorTypes=listOf("CV","CZI","CR","BOE'","opere accessorie")

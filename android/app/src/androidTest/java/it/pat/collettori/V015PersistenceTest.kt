@@ -14,9 +14,8 @@ class V015PersistenceTest {
     @Test fun explicitDraftSaveAtomicallyQueuesAndSurvivesReopening()=runBlocking{
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val name="v015-persistence-${UUID.randomUUID()}";val repo=Repository(context,"$name.db",name)
-        repo.prepareDemo();val demo=repo.dao.pack(repo.owner(),AppSpec.PACKAGE)!!
-        repo.store.save(JSONObject().put("base","https://offline.example.test").put("user_id",DemoMode.user).put("project_id",AppSpec.LOCAL_PROJECT).put("protocol",2).put("access_token","test").put("public_key","sb_publishable_test").put("role","inspector"))
-        val owner=repo.owner();val pack=demo.copy(owner=owner);repo.dao.install(pack);repo.dao.setting(Setting(owner,"generation","0"))
+        val demo=installTestCatalog(repo,"inspector")
+        val owner=repo.owner();val pack=demo
         val v=repo.begin(JSONObject(pack.body).getJSONArray("points").getJSONObject(0),pack,"LIST")
         val body=JSONObject(v.body);body.getJSONObject("sheet").put("notes","Offline durable note")
         repo.saveDraft(v.id,body,queueNow=true)

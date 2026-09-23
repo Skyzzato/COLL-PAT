@@ -35,7 +35,7 @@ fun statusIndex(points:List<JSONObject>,collectors:List<JSONObject>,visits:List<
 const val DEFAULT_COLLECTOR_COLOR="#176D73"
 fun collectorColor(c:JSONObject?):String=c?.optString("display_color")?.takeIf{it.matches(Regex("#[0-9a-fA-F]{6}"))}?:DEFAULT_COLLECTOR_COLOR
 
-/** Numeric semantic version comparison; Android demo suffix identifies a variant of the same release. */
+/** Numeric semantic version comparison, tolerant of historical build suffixes. */
 fun compareVersions(a:String,b:String):Int {
     fun parts(v:String):List<Int>{val core=v.removeSuffix("-demo").substringBefore('+').substringBefore('-');require(core.matches(Regex("[0-9]+(\\.[0-9]+){1,2}")));return core.split('.').map{it.toInt()}}
     val x=parts(a);val y=parts(b)

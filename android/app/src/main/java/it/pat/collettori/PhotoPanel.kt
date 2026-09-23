@@ -31,7 +31,7 @@ import org.json.JSONObject
     }
     val gallery=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->if(uri!=null)attach(uri,true)}
     Text("Fotografie",style=MaterialTheme.typography.titleMedium)
-    Text(if(repo.authenticated())"Le foto vengono condivise alla sincronizzazione." else "Foto conservate nell’archivio demo locale.",style=MaterialTheme.typography.bodySmall)
+    Text("Le foto vengono condivise alla sincronizzazione.",style=MaterialTheme.typography.bodySmall)
     if(visit.operational=="BOZZA")Row {
         FilledTonalButton(enabled=!working,onClick={try{val uri=repository.newCapture();pending=uri.toString();camera.launch(uri)}catch(e:Exception){error="Fotocamera non disponibile; usa Galleria"}}){ActionIcon(R.drawable.ic_camera);Text("Scatta foto")}
         OutlinedButton(enabled=!working,onClick={try{gallery.launch("image/*")}catch(e:Exception){error="Galleria non disponibile"}}){Text("Galleria")}

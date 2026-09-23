@@ -25,12 +25,17 @@ object ImportPlanner {
     fun propose(layer:ShapeLayer):LayerMapping {
         val aliases=mapOf("key" to listOf("source_id","id","fid","uuid"),"code" to listOf("code","codice","cod","name"),"description" to listOf("description","descrizion","descr","nome"),"collector" to listOf("collector","collettore","coll_cod"),"asset_type" to listOf("tipo","type","asset_type"),"under_asphalt" to listOf("under_asph","asfalto","sotto_asf"),"sequence" to listOf("sequence","sequenza","ordine"),"chainage" to listOf("progressiv","chainage","prog_m"),"branch" to listOf("ramo","branch"),"from" to listOf("from_id","da","inizio"),"to" to listOf("to_id","a","fine"),"previous" to listOf("prev_id","precedente"),"next" to listOf("next_id","successivo"))
         val fields=aliases.mapValues{(_,options)->layer.fields.firstOrNull{it.lowercase() in options}?:""}.toMutableMap()
-        fields["key"]=listOf("source_id","uuid","id","code","codice").firstNotNullOfOrNull{name->layer.fields.firstOrNull{it.equals(name,true)&&keyReport(layer,it).valid}}?:""
+        fields["key"]=listOf("source_id","uuid","id","id_pozz","id_pozzett","id_pozzetto","id_manuf","id_tronco","id_tratto","code","codice","cod_pozz","cod_pozzet","cod_manuf","cod_tratto","codice_poz","codice_man").firstNotNullOfOrNull{name->layer.fields.firstOrNull{it.equals(name,true)&&keyReport(layer,it).valid}}?:""
         return LayerMapping(layer.name,fields)
+    }
+    fun automaticMode(archive:ShapeArchive,mappings:List<LayerMapping>):String=when{
+        archive.layers.any{it.kind=="segment"}->"LINES"
+        archive.layers.filter{it.kind=="point"}.any{layer->mappings.firstOrNull{it.layer==layer.name}?.fields?.let{!it["previous"].isNullOrBlank()||!it["next"].isNullOrBlank()||!it["sequence"].isNullOrBlank()||!it["chainage"].isNullOrBlank()}==true}->"ORDERED"
+        else->"ISOLATED"
     }
     fun plan(archive:ShapeArchive,mappings:List<LayerMapping>,source:String,fallbackCollector:String,mode:String,orderConfirmed:Boolean,allowNewKeys:Boolean,tolerance:Double,existing:List<CatalogItem>,owner:String):ImportPlan {
         require(source.trim().length>=3){"Indicare un nome sorgente stabile (almeno 3 caratteri)"};require(tolerance.isFinite()&&tolerance in 0.0..20.0){"Tolleranza estremi: 0–20 metri"}
-        require(mode in listOf("LINES","ORDERED","ISOLATED"));if(mode=="ORDERED")require(orderConfirmed){"Confermare l'ordine e l'origine dei rami nell'anteprima"}
+        require(mode in listOf("LINES","ORDERED","ISOLATED"))
         require(!allowNewKeys){"Ogni layer richiede un identificativo stabile: non vengono generati identificativi sostitutivi per chiavi mancanti."}
         archive.layers.forEach{layer->val report=keyReport(layer,mappings.first{it.layer==layer.name}.fields["key"].orEmpty())
             require(report.valid){"${layer.name}: campo identificativo '${report.field}', ${report.empty} vuoti, ${report.duplicates} duplicati. Scegliere una chiave stabile univoca o correggere il file sorgente. "+report.examples.joinToString("; ")}
@@ -42,9 +47,23 @@ object ImportPlanner {
             return existing.firstOrNull{it.kind==kind&&JSONObject(it.body).optString("source_identity")==src}?.id?:UUID.randomUUID().toString()
         }
         fun put(kind:String,data:JSONObject){val id=data.getString("id");val item=CatalogItem(owner,id,kind,data.toString());staged[id]=item;all[id]=item}
+        fun automaticCollector():String{
+            val id=UUID.nameUUIDFromBytes(("coll-pat:auto-collector:"+source.lowercase()).toByteArray()).toString()
+            val existingCollector=all[id]
+            if(existingCollector==null){
+                val code="AUTO-"+id.take(8).uppercase()
+                put("collector",collectorDefaults(id,code,"Import automatico · $source").put("synthetic",false).put("source_identity","$source|automatic|collector"))
+            }else require(existingCollector.kind=="collector"&&!JSONObject(existingCollector.body).optBoolean("archived")){"Collettore automatico archiviato: ripristinarlo o scegliere un altro collettore nelle opzioni avanzate"}
+            return id
+        }
         fun collectors(f:ShapeFeature,m:LayerMapping):List<String>{
             val code=m.value(f,"collector")
-            if(code.isBlank()){val selected=all[fallbackCollector];require(selected?.kind=="collector"){"Scegliere il collettore per i record senza campo collettore"};require(!JSONObject(selected.body).optBoolean("archived")){"Il collettore scelto è archiviato: ripristinarlo prima dell'importazione"};return listOf(fallbackCollector)}
+            if(code.isBlank()){
+                val selected=all[fallbackCollector]
+                if(selected!=null){require(selected.kind=="collector"&&!JSONObject(selected.body).optBoolean("archived")){"Il collettore scelto non è disponibile"};return listOf(fallbackCollector)}
+                require(fallbackCollector.isBlank()){"Il collettore scelto non è disponibile"}
+                return listOf(automaticCollector())
+            }
             // The administrator explicitly maps this field to catalogue codes; no asset matching by code.
             val found=all.values.firstOrNull{it.kind=="collector"&&JSONObject(it.body).getString("code").equals(code,ignoreCase=true)}
             if(found!=null){require(!JSONObject(found.body).optBoolean("archived")){"Il collettore $code è archiviato: ripristinarlo prima dell'importazione"};return listOf(found.id)}
@@ -56,7 +75,7 @@ object ImportPlanner {
             val map=mappings.first{it.layer==layer.name}
             for(feature in layer.features){
                 val key=map.value(feature,"key");val id=identity("point",layer.name,key);val old=existing.find{it.id==id}?.let{JSONObject(it.body)}
-                val code=map.value(feature,"code");require(code.isNotBlank()){"${layer.name}: codice obbligatorio; gli zeri iniziali sono conservati"}
+                val code=map.value(feature,"code").ifBlank{key};require(code.isNotBlank()){"${layer.name}: codice o identificativo obbligatorio; gli zeri iniziali sono conservati"}
                 val coord=feature.geometry.getJSONArray("coordinates");val members=collectors(feature,map)
                 val p=JSONObject().put("id",id).put("code",code).put("description",map.value(feature,"description")).put("latitude",coord.getDouble(1)).put("longitude",coord.getDouble(0))
                     .put("collectors",JSONArray((old?.memberships().orEmpty()+members).distinct())).put("asset_type",map.value(feature,"asset_type").ifBlank{"UNKNOWN"}).put("synthetic",false).put("uncertainty_m",JSONObject.NULL)

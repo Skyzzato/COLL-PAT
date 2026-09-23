@@ -47,7 +47,7 @@ class V015EditorUiTest {
     private fun withEditor(acquisitionDelay:Long=0,block:(Repository,Visit,()->Int)->Unit){
         val name="ui-v015-${UUID.randomUUID()}";val repo=Repository(context,"$name.db",name)
         var returns=0
-        val v=runBlocking{repo.prepareDemo();val pack=repo.dao.pack(repo.owner(),AppSpec.PACKAGE)!!;repo.begin(JSONObject(pack.body).getJSONArray("points").getJSONObject(0),pack,"LIST")}
+        val v=runBlocking{val pack=installTestCatalog(repo);repo.begin(JSONObject(pack.body).getJSONArray("points").getJSONObject(0),pack,"LIST")}
         ActivityScenario.launch(MainActivity::class.java).use{scenario->
             scenario.onActivity{activity->activity.setContent{MaterialTheme{
                 var open by remember{mutableStateOf(true)};var message by remember{mutableStateOf("")}
@@ -72,8 +72,8 @@ class V015EditorUiTest {
         repo.store.clear();repo.db.close();context.deleteDatabase("$name.db")
     }
     @Test fun draftConfirmationRemainsTwoSecondsAndReturnsOnlyOnce(){withEditor{repo,v,returns->
-        val save=reveal("Salva bozza");assertTrue(save.performAction(AccessibilityNodeInfo.ACTION_CLICK));save.performAction(AccessibilityNodeInfo.ACTION_CLICK);waitFor("Bozza salvata");val visible=SystemClock.elapsedRealtime()
-        assertEquals(0,returns());waitFor("Pagina precedente · filtro Gilli");assertTrue(SystemClock.elapsedRealtime()-visible>=1700)
+        val save=reveal("Salva bozza");val clicked=SystemClock.elapsedRealtime();assertTrue(save.performAction(AccessibilityNodeInfo.ACTION_CLICK));save.performAction(AccessibilityNodeInfo.ACTION_CLICK);waitFor("Bozza salvata")
+        assertEquals(0,returns());waitFor("Pagina precedente · filtro Gilli");assertTrue("Navigation must wait for durable save and feedback deadline",SystemClock.elapsedRealtime()-clicked>=SaveFeedback.DISPLAY_MS)
         Thread.sleep(300);assertEquals(1,returns());assertEquals("BOZZA",runBlocking{repo.dao.visit(v.id,v.owner)!!.operational});assertEquals(2L,runBlocking{JSONObject(repo.dao.visit(v.id,v.owner)!!.body).getLong("local_edit")})
     }}
     @Test fun manualBackCancelsScheduledNavigation(){withEditor{_,_,returns->
@@ -92,7 +92,7 @@ class V015EditorUiTest {
             Thread.sleep(250);click("Conferma registrazione con eccezione");awaitEvents(repo,v,1)
             val event=runBlocking{lastEvidence(JSONObject(repo.dao.visit(v.id,v.owner)!!.body))!!}
             assertTrue(usableInspectionGps(event));assertEquals("EXCEPTION",event.getString("match_outcome"));assertEquals("Codice verificato sul posto",event.getString("exception_reason"))
-            click("Registra Ispezione");waitFor("Ispezione salvata in locale");waitFor("Pagina precedente · filtro Gilli")
+            click("Registra Ispezione");waitFor("Ispezione salvata in locale — in attesa di sincronizzazione");waitFor("Pagina precedente · filtro Gilli")
         }
     }
     @Test fun matchingReceiptUpdatesDraftNoticeWithoutRestartingTimer(){withEditor{repo,v,returns->

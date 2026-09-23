@@ -10,7 +10,7 @@ val localConfig = Properties().apply { rootProject.file("local.properties").take
 fun publicConfig(name: String) = providers.gradleProperty(name).orNull ?: localConfig.getProperty(name, "")
 fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "") + "\""
 require(publicConfig("SUPABASE_PUBLISHABLE_KEY").let { it.isBlank() || it.startsWith("sb_publishable_") }) { "Only SUPABASE_PUBLISHABLE_KEY may be embedded in the Android client" }
-layout.buildDirectory.set(file("build-pilot"))
+layout.buildDirectory.set(file("build-v016"))
 android {
     namespace = "it.pat.collettori"
     compileSdk = 36
@@ -18,32 +18,19 @@ android {
         applicationId = "it.pat.collettori.pilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "0.15"
+        versionCode = 16
+        versionName = "0.16"
         buildConfigField("String", "SUPABASE_URL", quoted(publicConfig("SUPABASE_URL")))
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", quoted(publicConfig("SUPABASE_PUBLISHABLE_KEY")))
-        buildConfigField("boolean", "DEMO", "false")
-        buildConfigField("boolean", "DEV_ADMIN", "false")
         buildConfigField("boolean", "PHOTO_UPLOAD_SIMULATED", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    buildTypes {
-        create("demo") {
-            initWith(getByName("debug"))
-            applicationIdSuffix = ".demo"
-            versionNameSuffix = "-demo"
-            buildConfigField("boolean", "DEMO", "true")
-            buildConfigField("boolean", "DEV_ADMIN", "true")
-            matchingFallbacks += listOf("debug")
-        }
-    }
     buildFeatures { compose = true; buildConfig = true }
-    testBuildType = providers.gradleProperty("testBuildType").orElse("debug").get()
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     sourceSets["main"].assets.srcDir("../../shared")
     sourceSets["test"].resources.srcDir("../../shared")
-    sourceSets["test"].resources.srcDir("src/demo/assets")
+    sourceSets["test"].resources.srcDir("../../demo")
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }

@@ -50,9 +50,9 @@ class V014PersistenceTest {
         val client=OkHttpClient.Builder().addInterceptor{chain->
             val r=chain.request();paths.add(r.url.encodedPath);assertEquals("sb_publishable_synthetic",r.header("apikey"));assertEquals(BuildConfig.VERSION_NAME.removeSuffix("-demo"),r.header("X-Coll-Pat-Version"))
             var code=200;val body=when{
-                r.url.encodedPath.endsWith("signup")->"{\"user\":{\"id\":\"${DemoMode.user}\"}}"
+                r.url.encodedPath.endsWith("signup")->"{\"user\":{\"id\":\"$TEST_USER\"}}"
                 r.url.query?.contains("refresh_token")==true->{refreshCount++;"{\"access_token\":\"renewed\",\"refresh_token\":\"rotated\"}"}
-                r.url.encodedPath.endsWith("token")->"{\"access_token\":\"initial\",\"refresh_token\":\"refresh\",\"user\":{\"id\":\"${DemoMode.user}\"}}"
+                r.url.encodedPath.endsWith("token")->"{\"access_token\":\"initial\",\"refresh_token\":\"refresh\",\"user\":{\"id\":\"$TEST_USER\"}}"
                 r.url.encodedPath.endsWith("coll_pat_status")->"{\"generation\":0,\"role\":\"inspector\"}"
                 r.header("Authorization")=="Bearer initial"->{code=401;"{\"message\":\"expired\"}"}
                 else->"{\"ok\":true}"
@@ -62,7 +62,7 @@ class V014PersistenceTest {
         val api=Api(store,client)
         api.register("https://auth.example.test","sb_publishable_synthetic","operator@example.test","test-password")
         api.login("https://auth.example.test","sb_publishable_synthetic","operator@example.test","test-password",AppSpec.LOCAL_PROJECT)
-        val reopened=SessionStore(context,pref);assertEquals(DemoMode.user,reopened.get()!!.getString("user_id"));assertFalse(reopened.get()!!.has("password"))
+        val reopened=SessionStore(context,pref);assertEquals(TEST_USER,reopened.get()!!.getString("user_id"));assertFalse(reopened.get()!!.has("password"))
         assertTrue(api.rpc("coll_pat_contract",JSONObject()).getBoolean("ok"));assertEquals(1,refreshCount);assertEquals("rotated",reopened.get()!!.getString("refresh_token"))
         assertTrue(paths.contains("/auth/v1/signup"));store.clear();assertNull(reopened.get());Unit
     }

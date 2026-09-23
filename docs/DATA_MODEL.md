@@ -1,6 +1,8 @@
-# Modello dati COLL-PAT v0.15
+# Modello dati COLL-PAT v0.16
 
 ## PostgreSQL
+
+La migrazione 006 pubblica 3 collettori, 22 punti e 19 tronchi sintetici nello stesso catalogo del progetto, conservando gli UUID storici. I dati sono marcati `synthetic=true`, `server_seed=v0.16` e `source_identity` stabile. I trigger conservano le date e ricalcolano le lunghezze dei tronchi con PostGIS. Non crea utenti né modifica permessi.
 
 Il catalogo esistente `coll_pat.catalog(project_id,id,kind,data)` rappresenta collettori, pozzetti e tronchi. I collettori conservano `description` (nome), `type`, `visits_h1/h2`, lunghezza e provenienza; acquisiscono `display_color`, `created_at/updated_at`, `archived_at/by` nel JSONB. `archived` rimane il campo operativo esistente. I punti hanno associazioni `collectors`, codice, coordinate, progressiva e `under_asphalt`. Nessuna duplicazione in tabelle omonime.
 

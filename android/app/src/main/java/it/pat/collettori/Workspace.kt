@@ -103,8 +103,6 @@ import java.time.format.DateTimeFormatter
     Scaffold(bottomBar={NavigationBar{listOf("Mappa","Collettori","Pozzetti","Ispezioni","Impostazioni").forEach{title->NavigationBarItem(selected=tab==title,onClick={tab=title},icon={Icon(painterResource(when(title){"Mappa"->R.drawable.ic_map;"Collettori"->R.drawable.ic_pipe;"Pozzetti"->R.drawable.ic_pin;"Ispezioni"->R.drawable.ic_history;else->R.drawable.ic_settings}),contentDescription=title,modifier=Modifier.size(24.dp))},label={Text(title,maxLines=1)})}}}){padding->
         Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding()){
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=6.dp),horizontalArrangement=Arrangement.SpaceBetween){Text(AppSpec.NAME,style=MaterialTheme.typography.titleLarge);Text("v${AppSpec.version}",style=MaterialTheme.typography.labelMedium)}
-            if(account==DemoMode.owner)Text("Demo locale · dati sintetici",Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.labelSmall)
-            else if(BuildConfig.DEMO&&activeCollectors.isEmpty())Text("Nessun collettore caricato per questo account. Per i dati di prova: Impostazioni → Account → Apri demo offline.",Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall)
             if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
             if(activeCapture!=null)TextButton(onClick={activeCapture?.cancel()}){Text("Interrompi rilevazione GPS")}
             if(message.isNotBlank())Row(Modifier.padding(horizontal=12.dp)){Text(message,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall);TextButton(onClick={message=""}){Text("Chiudi")}}

@@ -42,12 +42,10 @@ class StartupWorkflowTest {
         }
     }
 
-    @Test fun demoInspectionDefaultsEditSaveReopenAndPhoto()=runBlocking {
-        assumeTrue(BuildConfig.DEMO)
-        repo.prepareDemo()
-        val pack=repo.dao.packagesNow(repo.owner()).first{it.id==AppSpec.PACKAGE}
+    @Test fun serverCatalogInspectionDefaultsEditSaveReopenAndPhoto()=runBlocking {
+        val pack=installTestCatalog(repo,"inspector")
         val points=JSONObject(pack.body).getJSONArray("points").objects()
-        assertEquals(22,points.size)
+        assertEquals(2,points.size)
         val visit=repo.begin(points.first(),pack,"LIST")
         val body=JSONObject(visit.body)
         val sheet=body.getJSONObject("sheet")
@@ -73,9 +71,9 @@ class StartupWorkflowTest {
         try {
             val saved=reopened.dao.visit(visit.id,visit.owner)!!
             assertEquals("IMPEDITO",saved.operational)
-            assertEquals("SALVATO_LOCALMENTE",saved.sync)
+            assertEquals("IN_ATTESA",saved.sync)
             assertEquals(1,PhotoRepository(reopened).list(saved).size)
-            assertEquals(0,reopened.dao.pendingVisit(visit.id,visit.owner).size)
+            assertEquals(1,reopened.dao.pendingVisit(visit.id,visit.owner).size)
         } finally {reopened.db.close()}
         Unit
     }

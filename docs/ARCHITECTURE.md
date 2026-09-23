@@ -1,6 +1,6 @@
-# Architettura COLL-PAT v0.15
+# Architettura COLL-PAT v0.16
 
-Compose → Repository → Room/WorkManager → Supabase Auth/RPC/Storage, con cartografia MapLibre. Si mantengono importazione shapefile nativa, catalogo JSONB/PostGIS e distinzione fra archivio demo e account server.
+Compose → Repository → Room/WorkManager → Supabase Auth/RPC/Storage, con cartografia MapLibre. L'app usa solo account server. Il catalogo JSONB/PostGIS viene scaricato al login e conservato in Room per il lavoro offline; include i dati sintetici pubblicati nel progetto. Il pacchetto locale ricostruito comprende sempre la regola GPS comune, senza dipendere da un seed demo.
 
 - `InspectionStatus.kt`: unica logica di periodicità, ultima ispezione valida/anomalia e palette; indice costruito una volta per aggiornamento dei dati, mai una richiesta server per pozzetto.
 - `OfflineMap.kt`: sorgenti GeoJSON memorizzate, aggiornate soltanto se cambiano; soglia di zoom applicata ai livelli nativi. Lo zoom non ricompone il catalogo; i tronchi non hanno una soglia minima.
@@ -14,6 +14,6 @@ Room 3 usa `(owner,id)` per le visite: due account possono conservare copie dist
 
 La policy di versione viene verificata all’avvio e prima della sincronizzazione. Una policy già nota che blocca la versione viene applicata anche offline; una prima verifica senza rete non elimina l’accesso ai dati locali. Il server controlla indipendentemente la versione nelle RPC.
 
-[Architettura v0.13](history/v0.13/ARCHITECTURE.md) · [GIS](GIS.md) · [Collaudo](VALIDATION-v0.14.md).
+[Architettura v0.13](history/v0.13/ARCHITECTURE.md) · [GIS](GIS.md) · [Collaudo](VALIDATION-v0.16.md).
 
 La v0.15 aggiunge GpsWindow/LocationCapture per le misure mediate e SaveFeedback per il timer monotono di due secondi. Il modulo è sovrapposto alla pagina precedente, mantenuta viva con filtri e scroll; chiuderlo conserva la cronologia reale. Un esplicito Salva bozza scrive scheda e outbox nella stessa transazione. La sincronizzazione appartiene al worker, non alla schermata.

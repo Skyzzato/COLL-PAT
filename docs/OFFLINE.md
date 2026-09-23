@@ -1,6 +1,6 @@
-# Offline e sincronizzazione — v0.14
+# Offline e sincronizzazione — v0.16
 
-La sessione persistente consente di lavorare sui dati disponibili nel proprio archivio senza rete. I dati di altri account restano isolati. La demo è un archivio distinto, avviato esplicitamente dalla schermata iniziale o da Impostazioni → Account → Apri demo offline. Tornare al progetto server richiede nuovamente il login; le copie locali precedenti restano conservate.
+La sessione persistente consente di lavorare senza rete sui dati già scaricati dal proprio progetto server. I dati di altri account restano isolati. Non esiste un archivio demo locale: il catalogo sintetico, quando presente, è quello autorizzato dal server.
 
 Le bozze e le foto si salvano subito sul telefono. Per gli account autenticati il worker trasmette le modifiche appena possibile, conservando un payload immutabile per ogni tentativo. Una ricevuta valida chiude solo la modifica corrispondente; modifiche successive rimangono in attesa. Il pulsante Sincronizza effettua anche un aggiornamento del catalogo e del riepilogo ispezioni. Lo storico completo viene richiesto entrando nella pagina Ispezioni.
 

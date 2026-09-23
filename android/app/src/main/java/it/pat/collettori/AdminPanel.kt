@@ -9,52 +9,34 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 import org.json.JSONObject
 import java.util.UUID
 
 @Composable fun AccountPanel(repo:Repository,onChange:()->Unit){
-    val scope=rememberCoroutineScope();var openingDemo by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")}
-    val localDemo=repo.store.get()?.optString("base")==DemoMode.base
     Column{Text(repo.store.get()?.optString("username")?:"Nessun account")
-        if(BuildConfig.DEMO){
-            if(localDemo)Text("Archivio demo locale: Trento, Lavis e Via Gilli. I dati sintetici restano sul telefono.",style=MaterialTheme.typography.bodySmall)
-            else{
-                Text("Per provare i tre collettori sintetici, apri l’archivio demo separato. Per tornare al tuo progetto dovrai accedere nuovamente.",style=MaterialTheme.typography.bodySmall)
-                OutlinedButton(enabled=!openingDemo,onClick={openingDemo=true;scope.launch{try{repo.prepareDemo(switchAccount=true);onChange()}catch(e:CancellationException){throw e}catch(e:Exception){error=friendlyError(e)}finally{openingDemo=false}}}){Text(if(openingDemo)"Apertura demo…" else "Apri demo offline")}
-            }
-        }
-        if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
-        OutlinedButton(enabled=!openingDemo,onClick={repo.store.clear();onChange()}){Text(if(localDemo)"Torna al login" else "Logout")}}
+        OutlinedButton(onClick={repo.store.clear();onChange()}){Text("Logout")}}
 }
 
 @Composable fun AdminPanel(repo:Repository,catalog:List<CatalogItem>,visitCount:Int,onMessage:(String)->Unit){
     if(!repo.canManageCatalog())return
-    var expanded by rememberSaveable{mutableStateOf(false)};var unlocked by remember{mutableStateOf(repo.authenticated()&&repo.store.get()?.optString("role")=="admin")};var user by remember{mutableStateOf("")};var password by remember{mutableStateOf("")};var form by remember{mutableStateOf<JSONObject?>(null)}
+    var expanded by rememberSaveable{mutableStateOf(false)};var form by remember{mutableStateOf<JSONObject?>(null)}
     var archive by remember{mutableStateOf<CatalogItem?>(null)};var reset by remember{mutableStateOf(false)};var resetText by remember{mutableStateOf("")};var resetStatus by remember{mutableStateOf<JSONObject?>(null)}
     var busy by remember{mutableStateOf(false)};val scope=rememberCoroutineScope()
     fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:Exception){onMessage(friendlyError(e))}finally{busy=false}}}
     TextButton(onClick={expanded=!expanded}){Text("Gestione collettori")}
     if(expanded)Column{
-        if(!repo.authenticated())Text("Gestione dei dati demo sul telefono. Sblocco locale admin/admin.")
-        if(!unlocked){Field("Utente locale",user){user=it};OutlinedTextField(password,{password=it},label={Text("Password locale")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth());Button(onClick={if(user=="admin"&&password=="admin"){unlocked=true;password=""}else onMessage("Sblocco locale non valido")}){Text("Sblocca dashboard")}}
-        else{
-            Text(if(repo.authenticated())"Gestione riservata al responsabile del progetto" else "Le modifiche ai dati demo restano locali")
-            if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-            Button(onClick={form=collectorDefaults(UUID.randomUUID().toString(),"","")}){Text("Nuovo collettore")}
-            catalog.filter{it.kind=="collector"}.forEach{item->val c=JSONObject(item.body)
-                Row{TextButton(modifier=Modifier.weight(1f),onClick={form=JSONObject(item.body)}){Text(c.getString("description")+" · "+c.getString("code")+if(c.optBoolean("archived"))" (archiviato)" else "")};IconButton(enabled=!busy&&!c.optBoolean("archived"),onClick={archive=item}){Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_trash),"Archivia collettore")}}
-            }
-            OutlinedButton(enabled=!busy,onClick={task{resetStatus=repo.reconcile();resetText="";reset=true}}){Text("Azzera tutte le ispezioni")}
-            Text("Locali nell'account: $visitCount. Il reset richiede rete, backup privato e permessi amministrativi reali.",style=MaterialTheme.typography.bodySmall)
+        Text("Gestione riservata al responsabile del progetto")
+        if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
+        Button(onClick={form=collectorDefaults(UUID.randomUUID().toString(),"","")}){Text("Nuovo collettore")}
+        catalog.filter{it.kind=="collector"}.forEach{item->val c=JSONObject(item.body)
+            Row{TextButton(modifier=Modifier.weight(1f),onClick={form=JSONObject(item.body)}){Text(c.getString("description")+" · "+c.getString("code")+if(c.optBoolean("archived"))" (archiviato)" else "")};IconButton(enabled=!busy&&!c.optBoolean("archived"),onClick={archive=item}){Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_trash),"Archivia collettore")}}
         }
+        OutlinedButton(enabled=!busy,onClick={task{resetStatus=repo.reconcile();resetText="";reset=true}}){Text("Azzera tutte le ispezioni")}
+        Text("Locali nell'account: $visitCount. Il reset richiede rete, backup privato e permessi amministrativi reali.",style=MaterialTheme.typography.bodySmall)
     }
     form?.let{c->CollectorForm(c,{form=null}){next->task{repo.saveCatalog(listOf(CatalogItem(repo.owner(),next.getString("id"),"collector",next.toString())));form=null;onMessage("Anagrafica salvata localmente · accodata al server")}}}
     archive?.let{c->AlertDialog(onDismissRequest={archive=null},title={Text("Elimina / archivia collettore")},text={Text("Il collettore viene archiviato. Manufatti condivisi, geometrie e ispezioni restano conservati; il codice rimane riservato allo stesso UUID.")},confirmButton={TextButton(enabled=!busy,onClick={task{repo.archiveCollector(c.id);archive=null;onMessage("Collettore archiviato; storico conservato")}}){Text("Conferma archiviazione")}},dismissButton={TextButton(onClick={archive=null}){Text("Indietro")}})}

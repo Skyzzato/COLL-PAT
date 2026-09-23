@@ -1,8 +1,8 @@
-param([switch]$Instrumented, [switch]$Demo, [switch]$Full)
+param([switch]$Instrumented, [switch]$Full)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $androidRoot = Join-Path $projectRoot 'android'
-$buildRoot = Join-Path $androidRoot 'app\build-pilot'
+$buildRoot = Join-Path $androidRoot 'app\build-v016'
 # Normalize only generated build attributes. Never touch application data or other projects.
 if (Test-Path -LiteralPath $buildRoot) {
     $buildItems = @(Get-Item -LiteralPath $buildRoot) + @(Get-ChildItem -LiteralPath $buildRoot -Recurse -Force)
@@ -16,7 +16,6 @@ if (-not $env:ANDROID_HOME) { $env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'A
 Push-Location -LiteralPath $androidRoot
 try {
     $tasks = @(':app:assembleDebug', ':app:testDebugUnitTest', ':app:assembleDebugAndroidTest')
-    if ($Demo) { $tasks += @(':app:assembleDemo', ':app:testDemoUnitTest') }
     if ($Full) { $tasks = @('clean', 'build', ':app:assembleDebugAndroidTest') }
     if ($Instrumented) { $tasks += ':app:connectedDebugAndroidTest' }
     & '.\gradlew.bat' @tasks --no-daemon

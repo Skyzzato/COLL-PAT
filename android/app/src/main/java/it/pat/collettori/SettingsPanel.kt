@@ -55,7 +55,7 @@ import kotlinx.coroutines.*
             TextButton(onClick=onArchiveExport){Text("Esporta archivio di recupero")}
         }
         SettingsSection("Server e sincronizzazione",R.drawable.ic_sync){
-            Text(if(repo.authenticated())"Account server collegato" else "Archivio demo locale")
+            Text("Account server collegato")
             Text("${queue.size+visits.count{it.sync=="IN_ATTESA"&&queue.none{op->op.visitId==it.id}}} elementi in attesa")
             Button(enabled=repo.authenticated()&&!busy,onClick={task{
                 repo.dao.retryBlocked(repo.owner());val done=repo.sync();val remaining=repo.dao.allPending(repo.owner())
@@ -72,14 +72,13 @@ import kotlinx.coroutines.*
         SettingsSection("Account",R.drawable.ic_account){AccountPanel(repo,onAccount)}
         SettingsSection("Dati cartografici",R.drawable.ic_pipe){
             if(repo.canManageCatalog()){
-                Text(if(repo.authenticated())"Importa uno ZIP completo, verifica l’anteprima e conferma l’aggiornamento del progetto." else "Gli shapefile importati nella demo restano sul telefono.",style=MaterialTheme.typography.bodySmall)
+                Text("Seleziona uno ZIP: l'app riconosce automaticamente layer e campi, poi mostra l'anteprima prima dell'aggiornamento del progetto.",style=MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick={showImport=true}){Text("Importa shapefile")}
                 AdminPanel(repo,catalog,visits.size,onMessage)
             }else Text("L’importazione e la modifica dei dati cartografici sono riservate al responsabile del progetto.",style=MaterialTheme.typography.bodySmall)
         }
         SettingsSection("Informazioni",R.drawable.ic_info){
             Text("COLL-PAT",style=MaterialTheme.typography.titleLarge);Text("Ispezioni e rilievi dei collettori");Text("Versione ${AppSpec.version} · build ${BuildConfig.VERSION_CODE}")
-            if(BuildConfig.DEMO)Text(if(repo.owner()==DemoMode.owner)"Archivio demo · dati sintetici locali" else "Variante demo · progetto server collegato")
             Text("© OpenStreetMap contributors · ODbL",style=MaterialTheme.typography.bodySmall)
         }
     }
@@ -105,13 +104,12 @@ import kotlinx.coroutines.*
             require(email.contains('@')&&password.isNotBlank()){ "Inserisci email e password" }
             prefs.edit().putString("url",url.trim()).putString("key",key.trim()).putString("project",project.trim()).apply()
             if(register){require(password.length>=8){"Usa una password di almeno 8 caratteri"};require(password==confirmation){"Le password non coincidono"};repo.api.register(url.trim(),key.trim(),email,password);password="";confirmation="";register=false;message="Account creato: verifica l’email, poi accedi. L’accesso al progetto richiede l’abilitazione del responsabile."}
-            else{repo.api.login(url.trim(),key.trim(),email,password,project.trim());password="";repo.checkVersion();repo.prepareWorkspace();repo.reconcile();repo.dao.resumeAuth(repo.owner());repo.syncNow();onChange()}
+            else{repo.api.login(url.trim(),key.trim(),email,password,project.trim());password="";repo.checkVersion();repo.prepareWorkspace();repo.catalog();repo.dao.resumeAuth(repo.owner());repo.syncNow();onChange()}
         }catch(e:Exception){message=if(e is ApiError&&e.code==400)"Accesso non riuscito. Verifica email, password e conferma dell’account." else friendlyError(e)}finally{busy=false}}},modifier=Modifier.fillMaxWidth()){Text(if(register)"Crea account" else "Accedi")}
         TextButton(enabled=!busy,onClick={register=!register;message=""}){Text(if(register)"Hai già un account? Accedi" else "Registra un account")}
         TextButton(onClick={message="Il recupero della password non è ancora disponibile in questa versione."}){Text("Recupera la password")}
         SettingsSection("Configurazione collegamento",R.drawable.ic_settings,url.isBlank()||key.isBlank()){
             Field("SUPABASE_URL",url){url=it};Field("SUPABASE_PUBLISHABLE_KEY",key){key=it};Field("Progetto applicativo",project){project=it}
         }
-        if(BuildConfig.DEMO)OutlinedButton(enabled=!busy,onClick={scope.launch{busy=true;try{repo.prepareDemo(switchAccount=true);onChange()}catch(e:CancellationException){throw e}catch(e:Exception){message=friendlyError(e)}finally{busy=false}}}){Text("Apri demo offline")}
     }
 }

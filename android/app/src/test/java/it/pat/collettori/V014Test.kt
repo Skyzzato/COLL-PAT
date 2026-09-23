@@ -43,12 +43,12 @@ class V014Test {
         assertTrue(csv.startsWith("\uFEFF"));assertTrue(csv.contains("\"Città; virgola, \"\"testo\"\"\nseconda riga\""));assertTrue(csv.contains("\"SI\""));assertFalse(csv.contains("v300"));assertEquals("COLL-PAT_ispezioni_2026_T3.csv",InspectionCsv.filename(now))
     }
     @Test fun mapZoomOnlyAffectsManholesAndCollectorColors(){
-        val demo=JSONObject(javaClass.classLoader!!.getResource("demo-package.json")!!.readText())
+        val demo=JSONObject(javaClass.classLoader!!.getResource("trento-lavis-gilli-v0.14.json")!!.readText())
         demo.getJSONArray("collectors").getJSONObject(0).put("display_color","#254EBC")
         val style=JSONObject(localStyle(demo,demo.getJSONArray("points").objects(),null,null,FieldSettings(minZoomPozzetti=16f,symbol="RING",asphalt=false)))
         val layers=style.getJSONArray("layers").objects().associateBy{it.getString("id")}
         assertEquals(16.0,layers.getValue("manholes").getDouble("minzoom"),0.0);assertFalse(layers.getValue("pipes").has("minzoom"));assertEquals("none",layers.getValue("asphalt-mark").getJSONObject("layout").getString("visibility"))
         assertEquals("#254EBC",style.getJSONObject("sources").getJSONObject("network").getJSONObject("data").getJSONArray("features").getJSONObject(0).getJSONObject("properties").getString("display_color"))
     }
-    @Test fun gilliSeedPassesReferenceCoordinate(){val d=JSONObject(javaClass.classLoader!!.getResource("demo-package.json")!!.readText());val points=d.getJSONArray("points").objects().filter{it.getString("code").startsWith("GL-")};assertEquals(6,points.size);assertTrue(points.any{GpsRule.distance(46.0904585,11.1195695,it.getDouble("latitude"),it.getDouble("longitude"))<1});assertTrue(points.any{it.optBoolean("under_asphalt")})}
+    @Test fun gilliSeedPassesReferenceCoordinate(){val d=JSONObject(javaClass.classLoader!!.getResource("trento-lavis-gilli-v0.14.json")!!.readText());val points=d.getJSONArray("points").objects().filter{it.getString("code").startsWith("GL-")};assertEquals(6,points.size);assertTrue(points.any{GpsRule.distance(46.0904585,11.1195695,it.getDouble("latitude"),it.getDouble("longitude"))<1});assertTrue(points.any{it.optBoolean("under_asphalt")})}
 }

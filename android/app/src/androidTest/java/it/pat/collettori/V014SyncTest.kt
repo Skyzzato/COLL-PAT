@@ -23,7 +23,11 @@ class V014SyncTest {
     @Test fun submissionDuringDraftUploadKeepsOrderingAndFinalNotes()=runBlocking {
         val entered=CountDownLatch(1);val release=CountDownLatch(1)
         val rows=mutableMapOf<String,JSONObject>();val receipts=mutableMapOf<String,JSONObject>();val expected=mutableListOf<Int>()
-        val seed=JSONObject(context.assets.open("demo-package.json").bufferedReader().use{it.readText()})
+        val seed=testCatalog().apply{
+            val collector=collectorDefaults("00000000-0000-4000-8000-000000000101","TEST-SERVER","Collettore test")
+            getJSONArray("collectors").put(collector)
+            getJSONArray("points").put(JSONObject().put("id","00000000-0000-4000-8000-000000000201").put("code","TS-001").put("latitude",46.0).put("longitude",11.0).put("collectors",JSONArray(listOf(collector.getString("id")))).put("asset_type","MANHOLE").put("uncertainty_m",2))
+        }
         val client=OkHttpClient.Builder().addInterceptor{chain->
             val req=chain.request();val buffer=Buffer();req.body?.writeTo(buffer);val args=if(buffer.size>0)JSONObject(buffer.readUtf8())else JSONObject();var code=200
             val result=when(req.url.encodedPath.substringAfterLast('/')){
@@ -49,9 +53,9 @@ class V014SyncTest {
             Response.Builder().request(req).protocol(Protocol.HTTP_1_1).code(code).message("contract").body(result.toString().toResponseBody("application/json".toMediaType())).build()
         }.build()
         val id=UUID.randomUUID().toString();val repo=Repository(context,"sync-$id.db","sync-$id",client)
-        repo.store.save(JSONObject().put("base","https://sync.example.test").put("public_key","sb_publishable_test").put("user_id",DemoMode.user).put("project_id",AppSpec.LOCAL_PROJECT).put("protocol",2).put("access_token","test").put("refresh_token","test"))
+        repo.store.save(testSession("inspector").put("base","https://sync.example.test"))
         try{
-            repo.prepareWorkspace();repo.catalog();val pack=repo.dao.pack(repo.owner(),AppSpec.PACKAGE)!!;val point=JSONObject(pack.body).getJSONArray("points").getJSONObject(0);val v=repo.begin(point,pack,"LIST")
+            repo.prepareWorkspace();val downloaded=repo.catalog();assertEquals(1,downloaded.getJSONArray("points").length());assertEquals("gps-1",Rule.parse(downloaded.getJSONObject("rule")).version);val pack=repo.dao.pack(repo.owner(),AppSpec.PACKAGE)!!;val point=JSONObject(pack.body).getJSONArray("points").getJSONObject(0);val v=repo.begin(point,pack,"LIST")
             val event=JSONObject().put("id",UUID.randomUUID().toString()).put("acquired_at","2026-09-22T10:00:00Z").put("latitude",point.getDouble("latitude")).put("longitude",point.getDouble("longitude")).put("accuracy_m",5).put("age_s",0).put("permission","PRECISE").put("applied_limits",JSONObject().put("max_accuracy_m",10).put("radius_m",15)).put("local_evaluation",JSONObject().put("state","COMPATIBILE").put("distance_m",0))
             repo.appendEvent(v.id,event.put("inspection_id",v.id).put("manhole_id",v.manholeId).put("method",AcquisitionPolicy.METHOD).put("sample_count",5).put("duration_ms",5000).put("sample_span_ms",4000).put("match_outcome","VERIFIED"))
             val sending=async(Dispatchers.IO){repo.sync()}

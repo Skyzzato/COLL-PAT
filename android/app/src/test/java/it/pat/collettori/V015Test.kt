@@ -39,9 +39,9 @@ class V015Test {
     @Test fun feedbackDeadlineIsIndependentOfServerAndBlockedByConflict(){
         val v=Visit("visit","owner","point","pack",JSONObject().put("local_edit",7).toString(),sync="IN_ATTESA")
         val f=SaveFeedback("visit",7,false,1000);assertEquals(2000,f.remaining(1000));assertEquals(1,f.remaining(2999));assertEquals(0,f.remaining(3000))
-        assertTrue(f.title(v,false).contains("in attesa"));assertEquals("Ispezione salvata in locale",f.title(v,true));assertFalse(f.serverConfirmed(v.copy(sync="RICEVUTO_SERVER")))
-        val ack=v.copy(sync="RICEVUTO_SERVER",receipt="{}");assertEquals("Ispezione salvata sul server",f.title(ack,false));assertEquals(500,f.remaining(2500));assertFalse(f.serverConfirmed(ack.copy(body="{\"local_edit\":8}")))
-        assertEquals("Bozza salvata",f.copy(draft=true).title(v,false));assertTrue(f.copy(draft=true).detail(ack,false).contains("utenti autorizzati"));assertFalse(f.mayReturn(v.copy(sync="CONFLICT")));assertFalse(f.mayReturn(v.copy(id="another")))
+        assertTrue(f.title(v).contains("in attesa"));assertFalse(f.serverConfirmed(v.copy(sync="RICEVUTO_SERVER")))
+        val ack=v.copy(sync="RICEVUTO_SERVER",receipt="{}");assertEquals("Ispezione salvata sul server",f.title(ack));assertEquals(500,f.remaining(2500));assertFalse(f.serverConfirmed(ack.copy(body="{\"local_edit\":8}")))
+        assertEquals("Bozza salvata",f.copy(draft=true).title(v));assertTrue(f.copy(draft=true).detail(ack).contains("utenti autorizzati"));assertFalse(f.mayReturn(v.copy(sync="CONFLICT")));assertFalse(f.mayReturn(v.copy(id="another")))
     }
 
     private fun zip(cpg:String?=null,driver:Int=0,encoding:String="UTF-8",text:String="Città è più",ids:List<String> = listOf("01","abc","003")):ByteArray{

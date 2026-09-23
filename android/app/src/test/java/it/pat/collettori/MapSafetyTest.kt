@@ -5,12 +5,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MapSafetyTest {
-    private fun dataset() = JSONObject(javaClass.classLoader!!.getResource("demo-package.json")!!.readText())
+    private fun dataset() = JSONObject(javaClass.classLoader!!.getResource("trento-lavis-gilli-v0.14.json")!!.readText())
 
     @Test(expected=IllegalArgumentException::class) fun invalidDemoRejectedBeforeDatabaseWrite() {
         val pack=dataset()
         pack.getJSONArray("points").getJSONObject(0).put("latitude",95)
-        DemoMode.validateDataset(pack)
+        require(pack.getJSONArray("points").objects().all{validCoordinates(it.numberOrNull("latitude"),it.numberOrNull("longitude"))})
     }
 
     @Test fun noFixAndMissingAccuracyRemainUsableOffline() {
