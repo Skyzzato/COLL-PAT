@@ -53,7 +53,7 @@ import java.time.format.DateTimeFormatter
     val packs by repo.dao.packages(account).collectAsState(emptyList());val visits by repo.dao.visits(account).collectAsState(emptyList());val catalog by repo.dao.catalog(account).collectAsState(emptyList())
     val pack=packs.firstOrNull{it.id==AppSpec.PACKAGE}
     val data=remember(pack?.body){pack?.let{JSONObject(it.body)}?:JSONObject().put("points",JSONArray()).put("segments",JSONArray()).put("collectors",JSONArray()).put("basemap",JSONObject.NULL).put("osm",true)}
-    val points=remember(data){data.getJSONArray("points").objects()};val collectors=remember(catalog){catalog.filter{it.kind=="collector"}.map{JSONObject(it.body)}.sortedBy{it.optString("description")}}
+    val points=remember(data){data.getJSONArray("points").objects()};val collectors=remember(catalog){catalog.filter{it.kind=="collector"&&JSONObject(it.body).available()}.map{JSONObject(it.body)}.sortedBy{it.optString("description")}}
     var settings by remember{mutableStateOf(FieldSettings())};var settingsLoaded by remember{mutableStateOf(false)}
     LaunchedEffect(account){settings=repo.fieldSettings();settingsLoaded=true}
     LaunchedEffect(settings){if(settingsLoaded){delay(250);repo.saveSettings(settings)}}
@@ -74,7 +74,7 @@ import java.time.format.DateTimeFormatter
     val pointListState=rememberLazyListState();val collectorListState=rememberLazyListState();val historyListState=rememberLazyListState()
     val pageState=rememberSaveableStateHolder()
     fun visible(id:String,value:Boolean){hidden=if(value)hidden-id else hidden+id;scope.launch{repo.setVisible(id,value)}}
-    val activeCollectors=collectors.filter{!it.optBoolean("archived")}.map{it.getString("id")}.toSet()
+    val activeCollectors=collectors.filter{it.available()}.map{it.getString("id")}.toSet()
     fun focusCollector(c:JSONObject){val id=c.getString("id");visible(id,true);selector=false;tab="Mappa";tick++;bounds=collectorExtent(data,id);if(bounds.size==1)center=bounds.first() to tick}
     fun focusPoint(p:JSONObject){p.memberships().filter{it in activeCollectors}.forEach{visible(it,true)};highlighted=p.getString("id");selected=null;tab="Mappa";tick++;bounds=emptyList();center=LatLng(p.getDouble("latitude"),p.getDouble("longitude")) to tick}
     var pendingVisit by rememberSaveable{mutableStateOf<String?>(null)};var permissionRequested by rememberSaveable{mutableStateOf(false)}
@@ -123,18 +123,18 @@ import java.time.format.DateTimeFormatter
                     }
                 }else Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)){
                     pageState.SaveableStateProvider(tab){when(tab){
-                        "Collettori"->CollectorList(collectors,hidden,catalogState,collectorListState,{c->focusCollector(c)},::visible,{detail=it},{c->collectorFilter=c.getString("id");tab="Pozzetti"},data,catalog.associate{it.id to it.sync}){task{repo.catalog()}}
+                        "Collettori"->CollectorList(collectors,hidden,catalogState,collectorListState,{c->focusCollector(c)},::visible,{detail=it},{c->collectorFilter=c.getString("id");tab="Pozzetti"},data,catalog.associate{it.id to it.sync},repo){message=it}
                         "Pozzetti"->{
                             Column(Modifier.padding(horizontal=12.dp)){
                                 Field("Cerca codice, descrizione o collettore",query){query=it}
                                 if(collectorFilter.isNotBlank())Row{Text("Filtro: "+collectors.find{it.getString("id")==collectorFilter}?.optString("description"),Modifier.weight(1f));TextButton(onClick={collectorFilter=""}){Text("Rimuovi")}}
-                                Choice("Collettore",collectorFilter,listOf("" to "Tutti i collettori")+collectors.filter{!it.optBoolean("archived")}.map{it.getString("id") to it.getString("description")}){collectorFilter=it}
+                                Choice("Collettore",collectorFilter,listOf("" to "Tutti i collettori")+collectors.filter{it.available()}.map{it.getString("id") to it.getString("description")}){collectorFilter=it}
                                 Choice("Mostra",pointStatus,listOf("Tutti","Da ispezionare","Già ispezionati","Con anomalie").map{it to it}){pointStatus=it}
                             }
                             val filtered=points.filter{p->p.memberships().any{it in activeCollectors}&&(collectorFilter.isBlank()||collectorFilter in p.memberships())&&((p.optString("code")+p.optString("description")+collectorNames(p,collectors)).contains(query,true))&&when(pointStatus){"Da ispezionare"->statuses[p.getString("id")]?.inspectionUpToDate!=true;"Già ispezionati"->statuses[p.getString("id")]?.inspectionUpToDate==true;"Con anomalie"->statuses[p.getString("id")]?.latestInspectionHasAnomaly==true;else->true}}
                             if(filtered.isEmpty())Text("Nessun pozzetto nei filtri correnti",Modifier.padding(12.dp))
                             LazyColumn(state=pointListState,modifier=Modifier.weight(1f).padding(horizontal=12.dp)){items(filtered,key={it.getString("id")}){p->Card(modifier=Modifier.fillMaxWidth().padding(bottom=8.dp),onClick={selected=p.getString("id")}){Row(Modifier.padding(12.dp)){
-                                Column(Modifier.weight(1f)){Text(p.getString("code"),style=MaterialTheme.typography.titleMedium);Text(collectorNames(p,collectors));Text(assetLabel(p.optString("asset_type","UNKNOWN")),style=MaterialTheme.typography.labelSmall);Text(topologyLabel(p,points),style=MaterialTheme.typography.bodySmall);statuses[p.getString("id")]?.let{s->Text(s.calculatedStatus.label,style=MaterialTheme.typography.labelMedium);Text("Ultima: "+(s.latestInspection?.let{shown(inspectionInstant(it).toString())}?:"mai")+" · "+(if(s.targetDays.isFinite())"ogni %.0f giorni".format(s.targetDays) else "periodicità non prevista"),style=MaterialTheme.typography.bodySmall)}}
+                                Column(Modifier.weight(1f)){Text(p.getString("code"),style=MaterialTheme.typography.titleMedium);Text(collectorNames(p,collectors));Text(assetLabel(p.optString("asset_type","UNKNOWN")),style=MaterialTheme.typography.labelSmall);Text(topologyLabel(p,points),style=MaterialTheme.typography.bodySmall);Text(nextPointLabel(p,points,data.getJSONArray("segments").objects()),style=MaterialTheme.typography.bodySmall);p.memberships().mapNotNull{cid->collectors.find{it.getString("id")==cid}}.forEach{Text(frequencyLabel(it),style=MaterialTheme.typography.bodySmall)};statuses[p.getString("id")]?.let{s->Text(s.calculatedStatus.label,style=MaterialTheme.typography.labelMedium);Text("Ultima: "+(s.latestInspection?.let{shown(inspectionInstant(it).toString())}?:"mai")+" · "+(if(s.targetDays.isFinite())"ogni %.0f giorni".format(s.targetDays) else "periodicità non prevista"),style=MaterialTheme.typography.bodySmall)}}
                                 IconButton(onClick={focusPoint(p)}){Icon(painterResource(R.drawable.ic_target),"Centra "+p.getString("code"))}
                             }}}}
                         }
@@ -153,12 +153,12 @@ import java.time.format.DateTimeFormatter
     }
     }
     if(selector)ModalBottomSheet(onDismissRequest={selector=false},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
-        Box(Modifier.fillMaxHeight(.93f)){CollectorList(collectors,hidden,catalogState,rememberLazyListState(),{focusCollector(it)},::visible,{detail=it},{c->collectorFilter=c.getString("id");selector=false;tab="Pozzetti"},data,catalog.associate{it.id to it.sync}){task{repo.catalog()}}}
+        Box(Modifier.fillMaxHeight(.93f)){CollectorList(collectors,hidden,catalogState,rememberLazyListState(),{focusCollector(it)},::visible,{detail=it},{c->collectorFilter=c.getString("id");selector=false;tab="Pozzetti"},data,catalog.associate{it.id to it.sync},repo){message=it}}
     }
-    detail?.let{c->AlertDialog(onDismissRequest={detail=null},title={Text(c.getString("description"))},text={Column{Text(c.getString("code")+" · "+c.getString("type"));Text("Obiettivi: ${c.getInt("visits_h1")} visite 1° semestre · ${c.getInt("visits_h2")} visite 2° semestre");Text("${c.getDouble("hours_km_visit")} ore per km per visita");Text(lengthLabel(c));Text("UUID: "+c.getString("id"),style=MaterialTheme.typography.labelSmall)}},confirmButton={TextButton(onClick={detail=null}){Text("Chiudi")}})}
+    detail?.let{c->AlertDialog(onDismissRequest={detail=null},title={Text(c.getString("description"))},text={Column{Text(c.getString("code")+" · "+c.getString("type"));Text("Obiettivi: ${c.getInt("visits_h1")} visite 1° semestre · ${c.getInt("visits_h2")} visite 2° semestre");Text("${c.getDouble("hours_km_visit")} ore per km per visita");Text(lengthLabel(c));Text(frequencyLabel(c));Text("UUID: "+c.getString("id"),style=MaterialTheme.typography.labelSmall)}},confirmButton={TextButton(onClick={detail=null}){Text("Chiudi")}})}
     val p=points.find{it.getString("id")==selected}
     if(p!=null)ModalBottomSheet(onDismissRequest={selected=null}){Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())){
-        Text(p.getString("code"),style=MaterialTheme.typography.headlineMedium);Text(collectorNames(p,collectors));Text(topologyLabel(p,points))
+        Text(p.getString("code"),style=MaterialTheme.typography.headlineMedium);Text(collectorNames(p,collectors));Text(topologyLabel(p,points));Text(nextPointLabel(p,points,data.getJSONArray("segments").objects()));p.memberships().mapNotNull{cid->collectors.find{it.getString("id")==cid}}.forEach{Text(frequencyLabel(it))}
         Text(identification.distances[selected]?.let{"Distanza dall'operatore: %.0f m".format(it)}?:"Distanza dall'operatore non disponibile")
         Text("Conferma il codice sul posto.")
         val draft=visits.firstOrNull{it.manholeId==p.getString("id")&&it.operational=="BOZZA"&&!isCancelled(it)}
@@ -184,14 +184,14 @@ fun collectorExtent(data:JSONObject,id:String):List<LatLng>{
     return result.distinctBy{it.latitude to it.longitude}
 }
 
-@Composable fun CollectorList(collectors:List<JSONObject>,hidden:Set<String>,state:String,listState:androidx.compose.foundation.lazy.LazyListState,onFocus:(JSONObject)->Unit,onVisible:(String,Boolean)->Unit,onDetail:(JSONObject)->Unit,onPoints:(JSONObject)->Unit,data:JSONObject,statuses:Map<String,String>,refresh:()->Unit){
+@Composable fun CollectorList(collectors:List<JSONObject>,hidden:Set<String>,state:String,listState:androidx.compose.foundation.lazy.LazyListState,onFocus:(JSONObject)->Unit,onVisible:(String,Boolean)->Unit,onDetail:(JSONObject)->Unit,onPoints:(JSONObject)->Unit,data:JSONObject,statuses:Map<String,String>,repo:Repository,onMessage:(String)->Unit){
     var query by rememberSaveable{mutableStateOf("")};var multi by rememberSaveable{mutableStateOf(false)};var selection by rememberSaveable(stateSaver=androidx.compose.runtime.saveable.listSaver<Set<String>,String>(save={it.toList()},restore={it.toSet()})){mutableStateOf(emptySet<String>())};var actions by remember{mutableStateOf(false)}
-    val filtered=collectors.filter{!it.optBoolean("archived")&&(it.getString("code")+" "+it.getString("description")).contains(query,true)}
+    val filtered=collectors.filter{it.available()&&(it.getString("code")+" "+it.getString("description")).contains(query,true)}
     Column(Modifier.fillMaxSize().padding(horizontal=12.dp)){
         Field("Cerca codice / descrizione",query){query=it};Text(state,style=MaterialTheme.typography.labelSmall)
-        TextButton(onClick=refresh){Text("Aggiorna catalogo completo")}
+        DatabaseRefreshButton(repo,onMessage)
         Row(verticalAlignment=Alignment.CenterVertically){
-            IconToggleButton(checked=multi,onCheckedChange={multi=it}){Icon(painterResource(R.drawable.ic_flag),"Attiva selezione multipla")};Spacer(Modifier.weight(1f))
+            IconToggleButton(checked=multi,onCheckedChange={multi=it}){Icon(painterResource(R.drawable.ic_multiselect),"Seleziona più elementi")};Spacer(Modifier.weight(1f))
             Box{
                 TextButton(enabled=selection.isNotEmpty(),onClick={actions=true}){Text("Azioni (${selection.size})")}
                 DropdownMenu(actions,{actions=false}){
@@ -206,7 +206,7 @@ fun collectorExtent(data:JSONObject,id:String):List<LatLng>{
         LazyColumn(state=listState,modifier=Modifier.weight(1f)){items(filtered,key={it.getString("id")}){c->val id=c.getString("id");val extent=collectorExtent(data,id)
             Card(onClick={if(multi)selection=if(id in selection)selection-id else selection+id else onPoints(c)},modifier=Modifier.fillMaxWidth().padding(vertical=4.dp)){Column(Modifier.padding(10.dp)){
                 Row(verticalAlignment=Alignment.CenterVertically){if(multi)Checkbox(id in selection,{selection=if(it)selection+id else selection-id});Column(Modifier.weight(1f)){Text(c.getString("description"),style=MaterialTheme.typography.titleMedium);Text(c.getString("code")+" · "+c.getString("type"))};IconButton(onClick={onVisible(id,id in hidden)}){Icon(painterResource(if(id in hidden)R.drawable.ic_eye_off else R.drawable.ic_eye),if(id in hidden)"Mostra collettore" else "Nascondi collettore")};IconButton(enabled=extent.isNotEmpty(),onClick={onFocus(c)}){Icon(painterResource(R.drawable.ic_target),"Inquadra collettore")}}
-                Text(lengthLabel(c),style=MaterialTheme.typography.bodySmall);if(extent.isEmpty())Text("Centraggio non disponibile: nessuna geometria associata",style=MaterialTheme.typography.bodySmall)
+                Text(lengthLabel(c),style=MaterialTheme.typography.bodySmall);Text(frequencyLabel(c),style=MaterialTheme.typography.bodySmall);if(extent.isEmpty())Text("Centraggio non disponibile: nessuna geometria associata",style=MaterialTheme.typography.bodySmall)
                 Text(if(id in hidden)"Nascosto sulla mappa" else "Visibile sulla mappa",style=MaterialTheme.typography.labelSmall)
                 if(statuses[id]!="RICEVUTO_SERVER")Text(if(statuses[id]=="SEED_LOCAL")"Dati sintetici locali" else "Anagrafica in attesa di sincronizzazione",style=MaterialTheme.typography.labelSmall)
                 Row{TextButton(onClick={onDetail(c)}){Text("Anagrafica")};Spacer(Modifier.weight(1f));Text("›",style=MaterialTheme.typography.headlineSmall)}
@@ -224,7 +224,7 @@ fun modelLabel(model:String)=when(model){"ORDINARY"->"Ordinario";"ASPHALT_EXTERN
         Row{TextButton(onClick={datePicker=true}){ActionIcon(R.drawable.ic_calendar);Text(date?:"Filtra per data")};if(date!=null)TextButton(onClick={date=null}){Text("Rimuovi data")}}
         if(pointFilter.isNotBlank()||collectorFilter.isNotBlank())TextButton(onClick=clear){Text("Rimuovi filtro manufatto / collettore")}
         Field("Cerca pozzetto",search){search=it}
-        Choice("Collettore",chosenCollector,listOf("" to "Tutti")+collectors.filter{!it.optBoolean("archived")}.map{it.getString("id") to it.getString("description")}){chosenCollector=it}
+        Choice("Collettore",chosenCollector,listOf("" to "Tutti")+collectors.filter{it.available()}.map{it.getString("id") to it.getString("description")}){chosenCollector=it}
         FilterChip(selected=recent,onClick={recent=!recent},label={Text("Ultime eseguite")})
         val filtered=visits.sortedWith(if(recent)compareByDescending{inspectionInstant(it)}else compareBy{inspectionInstant(it)}).filter{v->(!isCancelled(v)&&v.sync!="RESET_OBSOLETE")&&points.find{it.getString("id")==v.manholeId}?.optString("code").orEmpty().contains(search,true)&&(date==null||visitDay(v).toString()==date)&&(pointFilter.isBlank()||v.manholeId==pointFilter)&&(chosenCollector.isBlank()||points.find{it.getString("id")==v.manholeId}?.memberships()?.contains(chosenCollector)==true)}
         if(filtered.isEmpty())Text("Nessuna ispezione nei filtri correnti")

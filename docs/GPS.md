@@ -1,4 +1,6 @@
-# GPS — COLL-PAT v0.15
+# GPS — COLL-PAT v0.2
+
+La v0.2 conserva il contratto GPS introdotto nella v0.15 e già presente nella v0.16.
 
 Le impostazioni esistenti `FieldSettings.maxAccuracy/maxDistance` sono l’unica fonte delle soglie operative. La regola gps-1 fornisce gli altri parametri; ogni evento conserva le soglie applicate. Le vecchie registrazioni mantengono i loro esiti, senza riclassificazione automatica.
 

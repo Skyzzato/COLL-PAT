@@ -1,6 +1,10 @@
-# Modello dati COLL-PAT v0.16
+# Modello dati COLL-PAT v0.2
 
 ## PostgreSQL
+
+La migrazione 007 aggiunge `catalog_deletions(project_id,id,kind,source_identity,deleted_at,deleted_by,original)`, privata con RLS. ID e identità sorgente eliminati non sono riutilizzabili. La RPC di eliminazione conserva gli elementi condivisi e i riferimenti necessari allo storico; i marcatori escludono tutti gli eliminati dal catalogo visibile. Un trigger differito verifica che `next_ids` punti a pozzetti attivi appartenenti allo stesso collettore, anche quando creati nello stesso batch.
+
+I punti manuali usano UUID, `collectors`, `next_ids`, `topology_end`, `sequence` e `branch`. Le importazioni conservano attributi originali, `source_fingerprint`, `identity_mode` e chiave sorgente. Nessun codice descrittivo sostituisce una relazione UUID.
 
 La migrazione 006 pubblica 3 collettori, 22 punti e 19 tronchi sintetici nello stesso catalogo del progetto, conservando gli UUID storici. I dati sono marcati `synthetic=true`, `server_seed=v0.16` e `source_identity` stabile. I trigger conservano le date e ricalcolano le lunghezze dei tronchi con PostGIS. Non crea utenti né modifica permessi.
 
@@ -15,6 +19,8 @@ Indici: ultima ispezione per progetto/pozzetto/data, stato e aggiornamento, appa
 ## Android
 
 Room 3 mantiene `visits`, `outbox`, `packages`, `settings`, `catalog`, `audit`, `imports`. La chiave visita e l’unicità delle revisioni outbox includono ora l’account. Preferenze mappa/GPS, metadati foto, policy versione e copie originali sono in `settings` e nello spazio privato esistente.
+
+La v0.2 conserva lo schema 3. `settings` registra ultimo aggiornamento riuscito, ruolo verificato, marcatori di eliminazione, dati già noti al server e tentativi di invio del catalogo. La nuova operazione `catalog_delete` è distinta dalle ispezioni. Il conteggio della coda deduplica gli UUID logici fra batch, chunk e retry; le foto non confermate sono unità distinte.
 
 La migrazione 2→3 copia integralmente le schede prima di sostituire la tabella, ricrea gli indici e sospende gli invii v0.13 non ancora trasmessi. Non elimina fotografie o storico. [Schema precedente](history/v0.13/DATA_MODEL.md).
 

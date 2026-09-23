@@ -12,6 +12,7 @@ android/local.properties
 **/build/
 **/build-pilot/
 **/build-v016/
+**/build-v02/
 *.apk
 *.log
 .tools/

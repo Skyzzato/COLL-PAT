@@ -38,7 +38,10 @@ fun collectorColor(c:JSONObject?):String=c?.optString("display_color")?.takeIf{i
 /** Numeric semantic version comparison, tolerant of historical build suffixes. */
 fun compareVersions(a:String,b:String):Int {
     fun parts(v:String):List<Int>{val core=v.removeSuffix("-demo").substringBefore('+').substringBefore('-');require(core.matches(Regex("[0-9]+(\\.[0-9]+){1,2}")));return core.split('.').map{it.toInt()}}
-    val x=parts(a);val y=parts(b)
+    // Published names are historical: 0.2 is release/build 17, after 0.16.
+    // Keep numeric ordering for every other version and the same registry in SQL.
+    fun ordered(v:String)=parts(v).let{if(it[0]==0&&it[1]==2)listOf(0,17,it.getOrElse(2){0})else it}
+    val x=ordered(a);val y=ordered(b)
     for(i in 0..2){val n=(x.getOrElse(i){0}).compareTo(y.getOrElse(i){0});if(n!=0)return n}
     val ap=a.removeSuffix("-demo").substringBefore('+').substringAfter('-',"");val bp=b.removeSuffix("-demo").substringBefore('+').substringAfter('-',"")
     if(ap==bp)return 0;if(ap.isEmpty())return 1;if(bp.isEmpty())return -1

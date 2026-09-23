@@ -30,6 +30,8 @@ object Shapefile {
             require(e.compressedSize<=0||out.size().toLong()<=maxOf(1024*1024L,e.compressedSize*200)){"ZIP: rapporto di compressione eccessivo"}
             entries[key]=out.toByteArray()
         }}
+        val stems=entries.keys.filter{it.substringAfterLast('.') in listOf("shp","shx","dbf")}.map{it.substringBeforeLast('.')}.distinct()
+        stems.forEach{stem->val missing=listOf("shp","shx","dbf").filter{"$stem.$it" !in entries};require(missing.isEmpty()){"$stem: componenti mancanti "+missing.joinToString{ ".$it" }}}
         val shapes=entries.keys.filter{it.endsWith(".shp")};require(shapes.isNotEmpty()){"Nessun .shp nel file ZIP"}
         val digest=java.security.MessageDigest.getInstance("SHA-256");entries.toSortedMap().forEach{(name,bytes)->digest.update(name.toByteArray());digest.update(0.toByte());digest.update(bytes)}
         val layers=shapes.map{path->
@@ -71,7 +73,11 @@ object Shapefile {
         }else Charset.forName("windows-1252") to (prefix+"UTF-8 non valido; proposta Windows-1252 per dati legacy, da verificare nell'anteprima")
     }
     fun detectCrs(wkt:String):Int{
-        val epsg=Regex("(?:AUTHORITY|ID)\\s*\\[\\s*\"EPSG\"\\s*,\\s*\"?(\\d+)\"?\\s*]",RegexOption.IGNORE_CASE).findAll(wkt).map{it.groupValues[1].toInt()}.toList().lastOrNull()
+        val epsg=Regex("(?:AUTHORITY|ID)\\s*\\[\\s*\"EPSG\"\\s*,\\s*\"?(\\d+)\"?\\s*]",RegexOption.IGNORE_CASE).findAll(wkt).filter{match->
+            var depth=0;var quoted=false
+            wkt.take(match.range.first).forEach{c->if(c=='"')quoted=!quoted else if(!quoted){if(c=='[')depth++;if(c==']')depth--}}
+            depth==1
+        }.map{it.groupValues[1].toInt()}.toList().lastOrNull()
         if(epsg!=null)return epsg
         val n=wkt.uppercase().replace('_',' ')
         if(!n.contains("PROJCS")&&!n.contains("PROJCRS")&&(n.contains("GCS WGS 1984")||n.contains("WGS 84")))return 4326

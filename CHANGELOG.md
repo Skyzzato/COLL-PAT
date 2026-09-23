@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2 — importazione e gestione completa del catalogo (pre-release)
+
+- Colonne identificative con esempi, chiavi composte e registro persistente delle corrispondenze per dati privi di chiavi affidabili; riconciliazione esplicita dei record modificati.
+- Pozzetti manuali nel modulo collettore, coordinate WGS84 validate e anteprima; dipendenze offline conservate.
+- Eliminazione effettiva dei nuovi collettori senza storico e cancellazioni server con marcatori privati, storico preservato e blocco delle riapparizioni.
+- Aggiornamento database condiviso, timestamp solo dopo successo, ruolo verificato, coda per elementi logici, successivo/distanza e frequenza nominale.
+- Logo e checkbox corretti; server/cache offline e bozze condivise della v0.16 conservati.
+- JSON grandi letti a porzioni per evitare il limite CursorWindow; cancellazioni parziali conservano batch a chunk e pozzetti condivisi.
+- VersionName 0.2, versionCode 17; migrazione SQL 007 additiva, Room 3 conservata. L'ordine delle pubblicazioni riconosce 0.2 come successiva a 0.16.
+
 ## v0.16 — catalogo server e importazione automatica (pre-release)
 
 - Rimossa la variante e l'archivio demo locali: l'app usa l'identità `it.pat.collettori.pilot` e richiede un progetto server autorizzato.

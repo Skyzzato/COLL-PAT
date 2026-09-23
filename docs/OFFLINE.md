@@ -1,6 +1,12 @@
-# Offline e sincronizzazione — v0.16
+# Offline e sincronizzazione — v0.2
 
 La sessione persistente consente di lavorare senza rete sui dati già scaricati dal proprio progetto server. I dati di altri account restano isolati. Non esiste un archivio demo locale: il catalogo sintetico, quando presente, è quello autorizzato dal server.
+
+Un collettore e i suoi pozzetti manuali sono salvati nella stessa transazione Room e pubblicati nello stesso batch atomico. La cancellazione mai inviata rimuove anagrafiche e operazioni inutili; i batch residui conservano il protocollo a chunk. Dopo un tentativo di invio, anche senza ricevuta, si conserva l'identità immutabile dell'operazione e si accoda la cancellazione server. I marcatori persistenti impediscono ricomparse da cache, refresh o reimportazione.
+
+I due pulsanti **Aggiorna database collettori** condividono il flusso catalogo più storico ispezioni. Il timestamp cambia soltanto dopo entrambi i successi e resta invariato in caso d'errore. Le modifiche pendenti restano locali fino alla propria ricevuta.
+
+Il contatore usa UUID di anagrafiche, schede, rettifiche e foto, una volta ciascuno: batch, chunk e retry non moltiplicano gli elementi. Errori e caricamenti in corso restano pendenti. Sono contate anche le bozze condivise in attesa; una copia di recupero locale senza operazione di invio non è conteggiata.
 
 Le bozze e le foto si salvano subito sul telefono. Per gli account autenticati il worker trasmette le modifiche appena possibile, conservando un payload immutabile per ogni tentativo. Una ricevuta valida chiude solo la modifica corrispondente; modifiche successive rimangono in attesa. Il pulsante Sincronizza effettua anche un aggiornamento del catalogo e del riepilogo ispezioni. Lo storico completo viene richiesto entrando nella pagina Ispezioni.
 

@@ -26,6 +26,14 @@ import kotlinx.coroutines.*
     val scope=rememberCoroutineScope();var busy by remember{mutableStateOf(false)}
     fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:Exception){onMessage(friendlyError(e))}finally{busy=false}}}
     var showImport by remember{mutableStateOf(false)}
+    val stored by repo.dao.settings(repo.owner()).collectAsState(emptyList())
+    val logical=remember(queue,visits,stored){
+        val settingsByKey=stored.associate{it.key to it.value}
+        val ids=queuedLogicalIds(queue,queue.mapNotNull{op->settingsByKey["catalog-upload:"+op.operationId]?.let{op.operationId to it}}.toMap()).toMutableSet()
+        visits.filter{it.sync in listOf("IN_ATTESA","IN_CORSO","CONFLICT","AUTH_REQUIRED")}.forEach{ids.add("inspection:"+it.id)}
+        visits.filter{it.sync!="SALVATO_LOCALMENTE"&&!isCancelled(it)}.forEach{v->settingsByKey["photos:"+v.id]?.let{org.json.JSONArray(it).objects()}?.filter{it.optString("uploadStatus")!="UPLOADED"&&it.optString("localUri").isNotBlank()}?.forEach{ids.add("photo:"+it.getString("photoId"))}}
+        ids.size
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)){
         Text("Impostazioni",style=MaterialTheme.typography.headlineSmall)
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -56,7 +64,7 @@ import kotlinx.coroutines.*
         }
         SettingsSection("Server e sincronizzazione",R.drawable.ic_sync){
             Text("Account server collegato")
-            Text("${queue.size+visits.count{it.sync=="IN_ATTESA"&&queue.none{op->op.visitId==it.id}}} elementi in attesa")
+            Text(uploadCountLabel(logical))
             Button(enabled=repo.authenticated()&&!busy,onClick={task{
                 repo.dao.retryBlocked(repo.owner());val done=repo.sync();val remaining=repo.dao.allPending(repo.owner())
                 onMessage(when{
@@ -66,7 +74,8 @@ import kotlinx.coroutines.*
                     else->"Sincronizzazione completata"
                 })
             }}){Text("Sincronizza")}
-            TextButton(enabled=repo.authenticated()&&!busy,onClick={task{repo.catalog();repo.downloadHistory();onMessage("Dati server aggiornati")}}){Text("Aggiorna collettori e ispezioni")}
+            DatabaseRefreshButton(repo,onMessage)
+            queue.filter{it.error!=null}.distinctBy{it.visitId to it.error}.forEach{Text(it.error.orEmpty(),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)}
             if(queue.any{it.state=="CONFLICT"})Text("Alcune modifiche a ispezioni o dati cartografici richiedono una verifica del responsabile.",color=MaterialTheme.colorScheme.error)
         }
         SettingsSection("Account",R.drawable.ic_account){AccountPanel(repo,onAccount)}

@@ -107,7 +107,7 @@ class V014FunctionalTest {
     @Test fun incompleteZipAndUnrecognizedCrsAreRejected(){
         val out=ByteArrayOutputStream()
         ZipOutputStream(out).use{target->ZipInputStream(javaClass.classLoader!!.getResourceAsStream("gis/points.zip")!!).use{input->while(true){val entry=input.nextEntry?:break;if(entry.name.endsWith(".shx"))continue;target.putNextEntry(ZipEntry(entry.name));input.copyTo(target);target.closeEntry()}}}
-        try{Shapefile.read(out.toByteArray().inputStream());fail("Missing .shx accepted")}catch(e:IllegalStateException){assertTrue(e.message!!.contains(".shx"))}
+        try{Shapefile.read(out.toByteArray().inputStream());fail("Missing .shx accepted")}catch(e:IllegalArgumentException){assertTrue(e.message!!.contains(".shx"))}
         try{Shapefile.detectCrs("LOCAL_CS[\"unknown\"]");fail("Unknown CRS accepted")}catch(e:IllegalStateException){assertTrue(e.message!!.contains("CRS non riconosciuto"))}
     }
 }

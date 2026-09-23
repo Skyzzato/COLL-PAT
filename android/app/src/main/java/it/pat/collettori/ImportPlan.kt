@@ -23,9 +23,16 @@ data class ImportPlan(val items:List<CatalogItem>,val preview:JSONObject,val pro
 
 object ImportPlanner {
     fun propose(layer:ShapeLayer):LayerMapping {
-        val aliases=mapOf("key" to listOf("source_id","id","fid","uuid"),"code" to listOf("code","codice","cod","name"),"description" to listOf("description","descrizion","descr","nome"),"collector" to listOf("collector","collettore","coll_cod"),"asset_type" to listOf("tipo","type","asset_type"),"under_asphalt" to listOf("under_asph","asfalto","sotto_asf"),"sequence" to listOf("sequence","sequenza","ordine"),"chainage" to listOf("progressiv","chainage","prog_m"),"branch" to listOf("ramo","branch"),"from" to listOf("from_id","da","inizio"),"to" to listOf("to_id","a","fine"),"previous" to listOf("prev_id","precedente"),"next" to listOf("next_id","successivo"))
+        val aliases=mapOf("key" to listOf("source_id","id","uuid"),"code" to listOf("code","codice","cod","name","numero","cod_pozz"),"description" to listOf("description","descrizion","descr","nome","note"),"collector" to listOf("collector","collettore","coll_cod","id_coll"),"asset_type" to listOf("tipo","type","asset_type"),"under_asphalt" to listOf("under_asph","asfalto","sotto_asf"),"sequence" to listOf("sequence","sequenza","ordine"),"chainage" to listOf("progressiv","chainage","prog_m"),"branch" to listOf("ramo","branch"),"from" to listOf("from_id","da","inizio"),"to" to listOf("to_id","a","fine"),"previous" to listOf("prev_id","precedente"),"next" to listOf("next_id","successivo"))
         val fields=aliases.mapValues{(_,options)->layer.fields.firstOrNull{it.lowercase() in options}?:""}.toMutableMap()
         fields["key"]=listOf("source_id","uuid","id","id_pozz","id_pozzett","id_pozzetto","id_manuf","id_tronco","id_tratto","code","codice","cod_pozz","cod_pozzet","cod_manuf","cod_tratto","codice_poz","codice_man").firstNotNullOfOrNull{name->layer.fields.firstOrNull{it.equals(name,true)&&keyReport(layer,it).valid}}?:""
+        if(fields["key"].isNullOrBlank()&&!fields["code"].isNullOrBlank()){
+            fields["key"]=fields.getValue("code");fields["scope"]=fields["collector"].orEmpty()
+            if(!keyReport(layer,LayerMapping(layer.name,fields)).valid){
+                val secondary=layer.fields.firstOrNull{it.equals("id",true)&&it!=fields["key"]}
+                if(secondary!=null)fields["discriminator"]=secondary
+            }
+        }
         return LayerMapping(layer.name,fields)
     }
     fun automaticMode(archive:ShapeArchive,mappings:List<LayerMapping>):String=when{
@@ -37,14 +44,20 @@ object ImportPlanner {
         require(source.trim().length>=3){"Indicare un nome sorgente stabile (almeno 3 caratteri)"};require(tolerance.isFinite()&&tolerance in 0.0..20.0){"Tolleranza estremi: 0–20 metri"}
         require(mode in listOf("LINES","ORDERED","ISOLATED"))
         require(!allowNewKeys){"Ogni layer richiede un identificativo stabile: non vengono generati identificativi sostitutivi per chiavi mancanti."}
-        archive.layers.forEach{layer->val report=keyReport(layer,mappings.first{it.layer==layer.name}.fields["key"].orEmpty())
+        archive.layers.forEach{layer->val report=keyReport(layer,mappings.first{it.layer==layer.name})
             require(report.valid){"${layer.name}: campo identificativo '${report.field}', ${report.empty} vuoti, ${report.duplicates} duplicati. Scegliere una chiave stabile univoca o correggere il file sorgente. "+report.examples.joinToString("; ")}
         }
         val warnings=mutableListOf<String>();val staged=linkedMapOf<String,CatalogItem>();val all=existing.associateBy{it.id}.toMutableMap();val sourceKeys=mutableSetOf<String>()
+        archive.layers.forEach{layer->val m=mappings.first{it.layer==layer.name}
+            if(m.fields["key"]==REGISTERED_IDENTITY)warnings.add("${layer.name}: identità assegnate e registrate; record modificati richiederanno riconciliazione esplicita")
+            if(!m.fields["collector"].isNullOrBlank()&&layer.features.any{m.value(it,"collector") in listOf("","0")})warnings.add("${layer.name}: campo ${m.fields["collector"]} con valori vuoti o 0; verificare i raggruppamenti prima di confermare")
+        }
         fun identity(kind:String,layer:String,key:String):String {
             require(key.isNotBlank()){"$layer: chiave sorgente assente"}
             val src="$source|$layer|$kind|$key";require(sourceKeys.add(src)){"Chiave sorgente duplicata in $layer: $key"}
-            return existing.firstOrNull{it.kind==kind&&JSONObject(it.body).optString("source_identity")==src}?.id?:UUID.randomUUID().toString()
+            val previous=existing.firstOrNull{it.kind==kind&&JSONObject(it.body).optString("source_identity")==src}
+            require(previous==null||!JSONObject(previous.body).deleted()){"Elemento di questa sorgente eliminato: non può essere reimportato"}
+            return previous?.id?:UUID.nameUUIDFromBytes(("coll-pat:$src").toByteArray()).toString()
         }
         fun put(kind:String,data:JSONObject){val id=data.getString("id");val item=CatalogItem(owner,id,kind,data.toString());staged[id]=item;all[id]=item}
         fun automaticCollector():String{
@@ -53,61 +66,63 @@ object ImportPlanner {
             if(existingCollector==null){
                 val code="AUTO-"+id.take(8).uppercase()
                 put("collector",collectorDefaults(id,code,"Import automatico · $source").put("synthetic",false).put("source_identity","$source|automatic|collector"))
-            }else require(existingCollector.kind=="collector"&&!JSONObject(existingCollector.body).optBoolean("archived")){"Collettore automatico archiviato: ripristinarlo o scegliere un altro collettore nelle opzioni avanzate"}
+            }else require(existingCollector.kind=="collector"&&JSONObject(existingCollector.body).available()){"Collettore automatico archiviato o eliminato: scegliere un altro collettore"}
             return id
         }
         fun collectors(f:ShapeFeature,m:LayerMapping):List<String>{
             val code=m.value(f,"collector")
             if(code.isBlank()){
                 val selected=all[fallbackCollector]
-                if(selected!=null){require(selected.kind=="collector"&&!JSONObject(selected.body).optBoolean("archived")){"Il collettore scelto non è disponibile"};return listOf(fallbackCollector)}
+                if(selected!=null){require(selected.kind=="collector"&&JSONObject(selected.body).available()){"Il collettore scelto non è disponibile"};return listOf(fallbackCollector)}
                 require(fallbackCollector.isBlank()){"Il collettore scelto non è disponibile"}
                 return listOf(automaticCollector())
             }
             // The administrator explicitly maps this field to catalogue codes; no asset matching by code.
-            val found=all.values.firstOrNull{it.kind=="collector"&&JSONObject(it.body).getString("code").equals(code,ignoreCase=true)}
-            if(found!=null){require(!JSONObject(found.body).optBoolean("archived")){"Il collettore $code è archiviato: ripristinarlo prima dell'importazione"};return listOf(found.id)}
-            val id=UUID.randomUUID().toString();put("collector",collectorDefaults(id,code,code+" — importato").put("synthetic",false));return listOf(id)
+            val found=all.values.firstOrNull{it.kind=="collector"&&JSONObject(it.body).optString("code").equals(code,ignoreCase=true)}
+            if(found!=null){require(JSONObject(found.body).available()){"Il collettore $code è archiviato o eliminato"};return listOf(found.id)}
+            val id=UUID.nameUUIDFromBytes(("coll-pat:collector:"+source+":"+code).toByteArray()).toString();put("collector",collectorDefaults(id,code,code+" — importato").put("synthetic",false));return listOf(id)
         }
         val keyToPoint=mutableMapOf<String,MutableList<String>>();val rawPoints=mutableMapOf<String,Pair<ShapeFeature,LayerMapping>>()
         val run=UUID.randomUUID().toString()
         for(layer in archive.layers.filter{it.kind=="point"}){
             val map=mappings.first{it.layer==layer.name}
             for(feature in layer.features){
-                val key=map.value(feature,"key");val id=identity("point",layer.name,key);val old=existing.find{it.id==id}?.let{JSONObject(it.body)}
-                val code=map.value(feature,"code").ifBlank{key};require(code.isNotBlank()){"${layer.name}: codice o identificativo obbligatorio; gli zeri iniziali sono conservati"}
+                val key=registeredKey(feature,layer,map,source,existing);val id=identity("point",layer.name,key);val old=existing.find{it.id==id}?.let{JSONObject(it.body)}
+                require(sourceRecords(existing,source,layer).none{it.id!=id&&JSONObject(it.body).optString("source_fingerprint")==featureFingerprint(feature)}){"La chiave scelta cambia l’identità di record già importati: ripristina le colonne precedenti o usa la riconciliazione guidata"}
+                val code=map.value(feature,"code").ifBlank{if(map.fields["key"]==REGISTERED_IDENTITY)"PZ-"+id.take(8).uppercase() else map.value(feature,"key")};require(code.isNotBlank()){"${layer.name}: seleziona la colonna del codice del pozzetto"}
                 val coord=feature.geometry.getJSONArray("coordinates");val members=collectors(feature,map)
                 val p=JSONObject().put("id",id).put("code",code).put("description",map.value(feature,"description")).put("latitude",coord.getDouble(1)).put("longitude",coord.getDouble(0))
-                    .put("collectors",JSONArray((old?.memberships().orEmpty()+members).distinct())).put("asset_type",map.value(feature,"asset_type").ifBlank{"UNKNOWN"}).put("synthetic",false).put("uncertainty_m",JSONObject.NULL)
-                    .put("source_identity",if(key.isBlank())"$source|${layer.name}|point|new:$run:$id" else "$source|${layer.name}|point|$key").put("source_key",key).put("source",source).put("source_layer",layer.name)
+                    .put("collectors",JSONArray((old?.memberships().orEmpty()+members).distinct())).put("asset_type",map.value(feature,"asset_type").takeIf{it in listOf("MANHOLE","PUMP_STATION","ACCESSORY","UNKNOWN")}?:map.fields["default_type"]?:"UNKNOWN").put("source_asset_type",map.value(feature,"asset_type")).put("synthetic",false).put("uncertainty_m",JSONObject.NULL)
+                    .put("source_identity","$source|${layer.name}|point|$key").put("source_key",key).put("source_reference_key",map.value(feature,"key")).put("source",source).put("source_layer",layer.name).put("source_fingerprint",featureFingerprint(feature)).put("source_attributes",JSONObject(feature.fields)).put("identity_mode",if(map.fields["key"]==REGISTERED_IDENTITY)"REGISTERED" else "COLUMNS")
                 val asphalt=map.value(feature,"under_asphalt").trim().lowercase()
                 p.put("under_asphalt",if(asphalt.isBlank())old?.optBoolean("under_asphalt")?:false else when(asphalt){"1","true","si","sì","yes"->true;"0","false","no"->false;else->error("Campo sotto asfalto non valido: usare sì/no o 1/0")})
                 // Preserve established topology when a partial file supplies no replacements.
-                listOf("previous_id","previous_distance_m","chainage_m","chainage_source","origin_id","branch","gis_chainage_m","sequence").forEach{k->old?.opt(k)?.let{p.put(k,it)}}
+                listOf("previous_id","previous_distance_m","chainage_m","chainage_source","origin_id","branch","gis_chainage_m","sequence","next_ids","topology_end").forEach{k->old?.opt(k)?.let{p.put(k,it)}}
                 map.value(feature,"chainage").takeIf{it.isNotBlank()}?.let{p.put("gis_chainage_m",decimalItalian(it)?:error("Progressiva GIS non valida"))}
                 put("point",p);rawPoints[id]=feature to map
                 if(key.isNotBlank())keyToPoint.getOrPut(key){mutableListOf()}.add(id)
+                val rawKey=map.value(feature,"key");if(rawKey.isNotBlank()&&rawKey!=key)keyToPoint.getOrPut(rawKey){mutableListOf()}.add(id)
             }
         }
         require(rawPoints.isNotEmpty()||mode=="LINES"){"Nessun layer di punti"}
-        fun endpoint(key:String,coordinate:JSONArray):String {
-            if(key.isNotBlank())return (keyToPoint[key].orEmpty()+existing.filter{it.kind=="point"&&JSONObject(it.body).optString("source")==source&&JSONObject(it.body).optString("source_key")==key}.map{it.id}).distinct().singleOrNull()?:error("Estremo sconosciuto o ambiguo: $key")
+        fun endpoint(key:String,coordinate:JSONArray,members:List<String>):String {
+            if(key.isNotBlank())return (keyToPoint[key].orEmpty()+existing.filter{it.kind=="point"&&JSONObject(it.body).let{p->p.optString("source")==source&&(p.optString("source_key")==key||p.optString("source_reference_key")==key)}}.map{it.id}).distinct().filter{pid->JSONObject(all.getValue(pid).body).memberships().any{it in members}}.singleOrNull()?:error("Estremo sconosciuto o ambiguo nel collettore: $key")
             require(tolerance>0){"Estremi mancanti: mappare from/to o scegliere tolleranza esplicita"}
-            val matches=all.values.filter{it.kind=="point"}.map{JSONObject(it.body)}.filter{GpsRule.distance(coordinate.getDouble(1),coordinate.getDouble(0),it.getDouble("latitude"),it.getDouble("longitude"))<=tolerance}
+            val matches=all.values.filter{it.kind=="point"}.map{JSONObject(it.body)}.filter{it.available()&&it.memberships().any{cid->cid in members}&&GpsRule.distance(coordinate.getDouble(1),coordinate.getDouble(0),it.getDouble("latitude"),it.getDouble("longitude"))<=tolerance}
             return matches.singleOrNull()?.getString("id")?:error("Estremo senza candidato univoco entro $tolerance m")
         }
         if(mode=="LINES"){
             require(archive.layers.any{it.kind=="segment"}){"Modalità punti e linee: manca un layer lineare"}
             for(layer in archive.layers.filter{it.kind=="segment"}){val map=mappings.first{it.layer==layer.name}
                 for(feature in layer.features){
-                    val key=map.value(feature,"key");val id=identity("segment",layer.name,key);val geom=feature.geometry
+                    val key=registeredKey(feature,layer,map,source,existing);val id=identity("segment",layer.name,key);val geom=feature.geometry
                     require(geom.getString("type")=="LineString"){"Polilinea multipart: separare i rami in oggetti con chiavi distinte"}
-                    val coords=geom.getJSONArray("coordinates");val from=endpoint(map.value(feature,"from"),coords.getJSONArray(0));val to=endpoint(map.value(feature,"to"),coords.getJSONArray(coords.length()-1));require(from!=to){"Tratto con estremi identici"}
                     val members=collectors(feature,map)
+                    val coords=geom.getJSONArray("coordinates");val from=endpoint(map.value(feature,"from"),coords.getJSONArray(0),members);val to=endpoint(map.value(feature,"to"),coords.getJSONArray(coords.length()-1),members);require(from!=to){"Tratto con estremi identici"}
                     for((pointId,coordinate) in listOf(from to coords.getJSONArray(0),to to coords.getJSONArray(coords.length()-1))){val ref=JSONObject(all[pointId]!!.body);val gap=GpsRule.distance(coordinate.getDouble(1),coordinate.getDouble(0),ref.getDouble("latitude"),ref.getDouble("longitude"));if(gap>maxOf(.5,tolerance))warnings.add("Discontinuità estremo ${ref.getString("code")}: %.1f m; associazione per chiave esplicita".format(gap))}
                     for(pointId in listOf(from,to)){val p=JSONObject(all[pointId]!!.body);p.put("collectors",JSONArray((p.memberships()+members).distinct()));put("point",p)}
                     put("segment",JSONObject().put("id",id).put("code",map.value(feature,"code")).put("collectors",JSONArray(members)).put("from_id",from).put("to_id",to).put("geometry",geom).put("length_m",geometryLength(geom)).put("schematic",false)
-                        .put("source_identity",if(key.isBlank())"$source|${layer.name}|segment|new:$run:$id" else "$source|${layer.name}|segment|$key").put("source",source))
+                        .put("source_identity","$source|${layer.name}|segment|$key").put("source_key",key).put("source",source).put("source_layer",layer.name).put("source_fingerprint",featureFingerprint(feature)))
                 }
             }
             if(tolerance>0)warnings.add("Associazione degli estremi entro $tolerance m: verificare i collegamenti nell'anteprima")
@@ -132,13 +147,14 @@ object ImportPlanner {
             }
         }else if(mode=="ORDERED"){
             require(archive.layers.none{it.kind=="segment"}){"Selezionare punti e linee per importare i layer lineari"}
+            require(existing.none{it.kind=="segment"&&JSONObject(it.body).let{s->!s.optBoolean("schematic")&&(s.optString("from_id") in rawPoints||s.optString("to_id") in rawPoints)}}){"Esistono tracciati ufficiali per questi punti: scegli punti senza ordine per aggiornare l’anagrafica conservando le geometrie"}
             val groups=rawPoints.keys.groupBy{id->val(f,m)=rawPoints[id]!!;JSONObject(all[id]!!.body).memberships().sorted().joinToString()+"|"+m.value(f,"branch")+"|"+m.layer}
             for((_,ids) in groups){
                 val sample=rawPoints[ids.first()]!!;val mapping=sample.second
                 val ordered=if(!mapping.fields["previous"].isNullOrBlank()||!mapping.fields["next"].isNullOrBlank()){
                     val links=mutableMapOf<String,String>();val incoming=mutableMapOf<String,String>()
                     fun link(a:String,b:String){require(a in ids&&b in ids&&a!=b){"Collegamento tra rami o estremo sconosciuto"};require(links[a]==null||links[a]==b);require(incoming[b]==null||incoming[b]==a){"Precedenti ambigui"};links[a]=b;incoming[b]=a}
-                    for(id in ids){val(f,m)=rawPoints[id]!!;val prev=m.value(f,"previous");val next=m.value(f,"next");if(prev.isNotBlank())link(keyToPoint[prev]?.singleOrNull()?:error("Precedente ambiguo: $prev"),id);if(next.isNotBlank())link(id,keyToPoint[next]?.singleOrNull()?:error("Successivo ambiguo: $next"))}
+                    for(id in ids){val(f,m)=rawPoints[id]!!;val prev=m.value(f,"previous");val next=m.value(f,"next");if(prev.isNotBlank())link(keyToPoint[prev]?.filter{it in ids}?.singleOrNull()?:error("Precedente ambiguo: $prev"),id);if(next.isNotBlank())link(id,keyToPoint[next]?.filter{it in ids}?.singleOrNull()?:error("Successivo ambiguo: $next"))}
                     val root=ids.filter{it !in incoming}.singleOrNull()?:error("Ordine ciclico o più origini: separare i rami")
                     val path=mutableListOf<String>();var at:String?=root;while(at!=null){require(at !in path){"Ciclo nell'ordine"};path.add(at);at=links[at]};require(path.size==ids.size){"Ordine discontinuo: separare i rami"};path
                 }else{

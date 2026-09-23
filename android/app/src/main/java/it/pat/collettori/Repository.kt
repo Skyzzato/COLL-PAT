@@ -35,6 +35,8 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     val dao=db.dao();val store=SessionStore(context,sessionPreferenceName);val api=httpClient?.let{Api(store,it)}?:Api(store)
     val writes=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private val mutation=Mutex()
+    private val refreshLock=Mutex()
+    val refreshing=kotlinx.coroutines.flow.MutableStateFlow(false)
     val editing=java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     companion object{
         private val syncLock=Mutex()
@@ -64,10 +66,11 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         }
     }
     suspend fun rebuildPackage(account:String){
-        val items=dao.catalogNow(account);val body=JSONObject().put("version",AppSpec.PACKAGE).put("area_id",project()).put("name",AppSpec.NAME).put("osm",true).put("basemap",JSONObject.NULL).put("attribution","© OpenStreetMap contributors · ODbL")
+        val accountProject=account.substringAfterLast('#',AppSpec.LOCAL_PROJECT)
+        val items=dao.catalogNow(account).filter{!JSONObject(it.body).deleted()};val body=JSONObject().put("version",AppSpec.PACKAGE).put("area_id",accountProject).put("name",AppSpec.NAME).put("osm",true).put("basemap",JSONObject.NULL).put("attribution","© OpenStreetMap contributors · ODbL")
             .put("rule",JSONObject(context.assets.open("gps-rule.json").bufferedReader().use{it.readText()}))
         listOf("collectors" to "collector","points" to "point","segments" to "segment").forEach{(key,kind)->body.put(key,JSONArray(items.filter{it.kind==kind}.map{JSONObject(it.body)}))}
-        val raw=body.toString();dao.install(OfflinePackage(account,AppSpec.PACKAGE,project(),raw,sha256(raw.toByteArray()),raw.toByteArray().size.toLong(),Instant.now().toString(),true))
+        val raw=body.toString();dao.install(OfflinePackage(account,AppSpec.PACKAGE,accountProject,raw,sha256(raw.toByteArray()),raw.toByteArray().size.toLong(),Instant.now().toString(),true))
     }
     suspend fun localCatalog():JSONObject?=dao.pack(owner(),AppSpec.PACKAGE)?.body?.let(::JSONObject)
     suspend fun snapshot(v:Visit):JSONObject=dao.settingValue(v.owner,"snapshot:"+v.id)?.let(::JSONObject)?:JSONObject(dao.pack(v.owner,v.datasetId)?.body?:error("Anagrafica originaria non disponibile"))
@@ -159,16 +162,28 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
     suspend fun visibility():Set<String> = dao.catalogNow(owner()).filter{it.kind=="collector"&&dao.settingValue(owner(),"visible:${it.id}")=="false"}.map{it.id}.toSet()
     suspend fun saveCatalog(items:List<CatalogItem>,provenance:JSONObject?=null)=mutation.withLock{
         check(canManageCatalog()){"Gestione riservata al responsabile del progetto"}
-        val account=owner();val all=(dao.catalogNow(account).associateBy{it.id}+items.associateBy{it.id}).values
-        val collectors=all.filter{it.kind=="collector"}.map{JSONObject(it.body)};collectors.forEach(::validateCollector)
+        val account=owner()
+        val deleted=dao.settingsNow(account).filter{it.key.startsWith("deleted:")}.map{it.key.removePrefix("deleted:")}.toSet()
+        require(items.none{it.id in deleted||JSONObject(it.body).memberships().any{cid->cid in deleted}}){"Elemento eliminato: non è possibile ripubblicarlo"}
+        val all=(dao.catalogNow(account).associateBy{it.id}+items.associateBy{it.id}).values
+        val collectors=all.filter{it.kind=="collector"&&!JSONObject(it.body).deleted()}.map{JSONObject(it.body)};collectors.forEach(::validateCollector)
         require(collectors.map{it.getString("code").lowercase()}.distinct().size==collectors.size){"Codice collettore già utilizzato"}
+        val collectorIds=collectors.map{it.getString("id")}.toSet()
+        items.filter{it.kind=="point"}.forEach{val p=JSONObject(it.body);require(validCoordinates(p.numberOrNull("latitude"),p.numberOrNull("longitude"))&&p.optString("code").isNotBlank()){ "Codice e coordinate del pozzetto obbligatori" };require(p.memberships().isNotEmpty()&&p.memberships().all{it in collectorIds}){"Collettore del pozzetto assente"}}
         val payload=JSONObject().put("items",JSONArray(items.map{JSONObject().put("kind",it.kind).put("data",JSONObject(it.body))})).put("provenance",provenance?:JSONObject.NULL)
         val bytes=payload.toString().toByteArray().size
         require(bytes<=40*1024*1024){"Importazione strutturata oltre 40 MiB: dividere il file; nessun dato salvato"}
         db.withTransaction{
             items.forEach{dao.putCatalog(it.copy(owner=account,sync="IN_ATTESA"))}
+            enqueueCatalog(account,payload)
+            if(provenance!=null)dao.saveImport(ImportRecord(provenance.getString("id"),account,provenance.getString("source"),provenance.getString("hash"),provenance.getJSONObject("mapping").toString(),provenance.getJSONObject("report").toString(),Instant.now().toString(),"IN_ATTESA"))
+            rebuildPackage(account)
+        };syncNow()
+    }
+    // Used inside the caller's Room transaction, including safe cancellation of unsent batches.
+    private suspend fun enqueueCatalog(account:String,payload:JSONObject){
             val reference=UUID.randomUUID().toString();val gen=generation(account)
-            if(bytes<=4*1024*1024)enqueue(account,reference,"catalog",payload,gen)
+            if(payload.toString().toByteArray().size<=4*1024*1024)enqueue(account,reference,"catalog",payload,gen)
             else{
                 val chunks=mutableListOf<List<JSONObject>>();var batch=mutableListOf<JSONObject>();var batchBytes=0
                 for(item in payload.getJSONArray("items").objects()){
@@ -177,16 +192,62 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
                     batch.add(item);batchBytes+=size
                 };if(batch.isNotEmpty())chunks.add(batch)
                 val ids=chunks.mapIndexed{index,chunk->enqueue(account,reference,"catalog_chunk",JSONObject().put("batch_id",reference).put("index",index).put("items",JSONArray(chunk)),gen).operationId}
-                val final=enqueue(account,reference,"catalog",JSONObject().put("batch_id",reference).put("chunks",JSONArray(ids)).put("provenance",provenance?:JSONObject.NULL),gen)
+                val final=enqueue(account,reference,"catalog",JSONObject().put("batch_id",reference).put("chunks",JSONArray(ids)).put("provenance",payload.opt("provenance")?:JSONObject.NULL),gen)
                 dao.setting(Setting(account,"catalog-upload:"+final.operationId,payload.toString()))
             }
-            if(provenance!=null)dao.saveImport(ImportRecord(provenance.getString("id"),account,provenance.getString("source"),provenance.getString("hash"),provenance.getJSONObject("mapping").toString(),provenance.getJSONObject("report").toString(),Instant.now().toString(),"IN_ATTESA"))
-            rebuildPackage(account)
-        };syncNow()
     }
     suspend fun archiveCollector(id:String){
         val c=dao.catalogNow(owner()).first{it.id==id&&it.kind=="collector"};val body=JSONObject(c.body).put("archived",true).put("archived_at",Instant.now().toString()).put("archived_by",store.get()!!.getString("user_id"))
         saveCatalog(listOf(c.copy(body=body.toString())))
+    }
+    suspend fun deleteImpact(id:String):CollectorDeletion {
+        val account=owner();val items=dao.catalogNow(account);val visits=dao.visitsNow(account)
+        val pointIds=items.filter{it.kind=="point"&&id in JSONObject(it.body).memberships()}.map{it.id}.toSet()
+        return deletionImpact(id,items,visits,visits.filter{it.manholeId in pointIds}.sumOf{PhotoRepository(this).list(it).size})
+    }
+    suspend fun deleteCollector(id:String)=syncLock.withLock{mutation.withLock{
+        check(canManageCatalog()){"Eliminazione riservata all’amministratore"}
+        val account=owner();val items=dao.catalogNow(account);val collector=items.firstOrNull{it.id==id&&it.kind=="collector"}?:error("Collettore non disponibile")
+        val impact=deleteImpact(id)
+        require(items.none{it.kind=="segment"&&it.id in impact.shared&&JSONObject(it.body).let{b->b.optString("from_id") in impact.removed||b.optString("to_id") in impact.removed}}){"Relazioni condivise incoerenti: correggere le appartenenze prima di eliminare"}
+        val adjusted=items.filter{it.id !in impact.removed}.mapNotNull{item->
+            val b=JSONObject(item.body);var changed=false
+            if(item.id in impact.shared){b.put("collectors",JSONArray(b.memberships()-id));changed=true}
+            val links=b.optJSONArray("next_ids")?.strings()
+            if(links?.any{it in impact.removed}==true){b.put("next_ids",JSONArray(links.filter{it !in impact.removed}));changed=true}
+            if(changed)item.copy(body=b.toString())else null
+        }.associateBy{it.id}
+        val localOnly=collector.sync!="RICEVUTO_SERVER"&&impact.inspections==0&&impact.removed.all{dao.settingValue(account,"server-known:$it")==null&&dao.settingValue(account,"catalog-attempted:$it")==null}
+        db.withTransaction{
+            if(localOnly){
+                // Only rewrite never-attempted batches. Immutable requests already sent retain their receipt identity.
+                val batches=dao.allPending(account).filter{it.kind=="catalog"}
+                for(op in batches){
+                    val p=dao.settingValue(account,"catalog-upload:"+op.operationId)?.let(::JSONObject)?:JSONObject(op.body).getJSONObject("payload")
+                    val rows=p.optJSONArray("items")?.objects().orEmpty()
+                    if(rows.none{row->val rid=row.getJSONObject("data").getString("id");rid in impact.removed||rid in adjusted})continue
+                    val keep=rows.filter{it.getJSONObject("data").getString("id") !in impact.removed}.map{row->
+                        adjusted[row.getJSONObject("data").getString("id")]?.let{row.put("data",JSONObject(it.body))};row
+                    }
+                    dao.pendingVisit(op.visitId,account).filter{it.kind.startsWith("catalog")}.forEach{dao.acknowledge(it.operationId)}
+                    dao.removeSetting(account,"catalog-upload:"+op.operationId)
+                    if(keep.isNotEmpty())enqueueCatalog(account,JSONObject().put("items",JSONArray(keep)).put("provenance",JSONObject.NULL))
+                }
+            }
+            for(item in items.filter{it.id in impact.removed}){
+                dao.setting(Setting(account,"deleted:"+item.id,JSONObject(item.body).put("deleted",true).put("kind",item.kind).toString()))
+                dao.removeCatalog(account,item.id);dao.removeSetting(account,"visible:"+item.id)
+            }
+            adjusted.values.forEach{dao.putCatalog(it)}
+            if(!localOnly)enqueue(account,id,"catalog_delete",JSONObject().put("id",id).put("confirmed",true),generation(account))
+            rebuildPackage(account)
+        };syncNow();localOnly
+    }}
+    suspend fun refreshDatabase(){
+        check(refreshLock.tryLock()){"Aggiornamento già in corso"}
+        val account=owner()
+        refreshing.value=true
+        try{catalog();downloadHistory();check(owner()==account){"Account cambiato durante l’aggiornamento"};dao.setting(Setting(account,"database-last-success",Instant.now().toString()))}finally{refreshing.value=false;refreshLock.unlock()}
     }
     suspend fun reconcile():JSONObject{
         val account=owner();val s=api.rpc("coll_pat_status",JSONObject().put("p_project",project()),account)
@@ -196,25 +257,28 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
             for(op in dao.allPending(account))if(op.generation!=gen)dao.updatePending(op.copy(state="RESET_OBSOLETE",error="Generazione precedente: recupero esplicito richiesto"))
             for(v in dao.visitsNow(account))if(JSONObject(v.body).optLong("generation",-1)!=gen)dao.save(v.copy(sync="RESET_OBSOLETE",error="Scheda precedente al reset; non verrà ripubblicata"))
         }
-        val current=store.get();if(current!=null&&sessionOwner(current)==account)store.save(current.put("role",s.getString("role")))
+        val current=store.get();if(current!=null&&sessionOwner(current)==account){store.save(current.put("role",s.getString("role")));dao.setting(Setting(account,"verified-role",s.getString("role")))}
         return s
     }
     suspend fun catalog():JSONObject{
-        val account=owner();reconcile();val loaded=mutableListOf<CatalogItem>();val archived=mutableListOf<CatalogItem>();var offset=0;var revision:Long?=null
+        val account=owner();reconcile();val loaded=mutableListOf<CatalogItem>();val archived=mutableListOf<CatalogItem>();val deleted=mutableListOf<JSONObject>();var offset=0;var revision:Long?=null
         do{
             val page=api.rpc("coll_pat_catalog",JSONObject().put("p_project",project()).put("p_offset",offset).put("p_revision",revision?:JSONObject.NULL),account)
             if(revision==null)revision=page.getLong("revision")
+            deleted.addAll(page.optJSONArray("deleted")?.objects().orEmpty())
             for(item in page.optJSONArray("archived")?.objects().orEmpty())archived.add(CatalogItem(account,item.getJSONObject("data").getString("id"),item.getString("kind"),item.getJSONObject("data").toString(),"RICEVUTO_SERVER"))
             for(item in page.getJSONArray("items").objects())loaded.add(CatalogItem(account,item.getJSONObject("data").getString("id"),item.getString("kind"),item.getJSONObject("data").toString(),"RICEVUTO_SERVER"))
             offset+=page.getJSONArray("items").length()
             check(offset<=100000){"Catalogo troppo grande"}
         }while(page.getBoolean("has_more"))
-        db.withTransaction{
+        mutation.withLock{db.withTransaction{
+            for(item in deleted){val id=item.getString("id");dao.setting(Setting(account,"deleted:$id",item.toString()));dao.removeCatalog(account,id)}
+            val tombstones=dao.settingsNow(account).filter{it.key.startsWith("deleted:")}.map{it.key.removePrefix("deleted:")}.toSet()
             val pendingIds=dao.allPending(account).filter{it.kind.startsWith("catalog")}.flatMap{op->val p=dao.settingValue(account,"catalog-upload:"+op.operationId)?.let(::JSONObject)?:JSONObject(op.body).getJSONObject("payload");p.optJSONArray("items")?.objects().orEmpty().map{i->i.getJSONObject("data").getString("id")}}.toSet()
-            loaded.filter{it.id !in pendingIds}.forEach{dao.putCatalog(it)}
-            archived.forEach{dao.putCatalog(it)}
+            loaded.filter{it.id !in pendingIds&&it.id !in tombstones}.forEach{item->val data=JSONObject(item.body);if(item.kind!="collector")data.put("collectors",JSONArray(data.memberships().filter{it !in tombstones}));dao.putCatalog(item.copy(body=data.toString()));dao.setting(Setting(account,"server-known:"+item.id,"true"))}
+            archived.filter{it.id !in tombstones}.forEach{dao.putCatalog(it)}
             dao.setting(Setting(account,"catalog-state","Completo dal server · ${Instant.now()}"));rebuildPackage(account)
-        };return localCatalog()!!
+        }};return localCatalog()!!
     }
     suspend fun downloadHistory(full:Boolean=true,semesterOnly:String?=null){
         val account=owner();reconcile();var offset=0;var cursor:String?=null
@@ -247,12 +311,17 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
         for(op in dao.pending(account)){
             if(owner()!=account)return@withLock true
             // A terminal catalogue error blocks dependants until corrected; never send unknown assets.
-            if(!op.kind.startsWith("catalog")&&dao.allPending(account).any{it.kind.startsWith("catalog")})continue
+            if(!op.kind.startsWith("catalog")&&dao.allPending(account).any{it.kind in listOf("catalog","catalog_chunk")})continue
             if(op.kind=="catalog"&&dao.allPending(account).any{it.kind=="catalog_chunk"&&it.visitId==op.visitId})continue
             if(op.kind=="cancel"&&dao.allPending(account).any{it.visitId==op.visitId&&it.kind in listOf("inspection","shared_inspection")})continue
             try{
                 dao.updatePending(op.copy(state="IN_CORSO"))
-                val receipt=if(op.kind=="shared_inspection")api.rpc("coll_pat_save_inspection",JSONObject().put("operation",JSONObject(op.body)),account) else api.rpc("coll_pat_apply",JSONObject().put("operation",JSONObject(op.body)),account)
+                if(op.kind=="catalog"||op.kind=="catalog_chunk"){
+                    val batchFinal=if(op.kind=="catalog_chunk")dao.pendingVisit(op.visitId,account).firstOrNull{it.kind=="catalog"} else op
+                    val p=batchFinal?.let{dao.settingValue(account,"catalog-upload:"+it.operationId)}?.let(::JSONObject)?:JSONObject(op.body).getJSONObject("payload")
+                    p.optJSONArray("items")?.objects().orEmpty().forEach{dao.setting(Setting(account,"catalog-attempted:"+it.getJSONObject("data").getString("id"),"true"))}
+                }
+                val receipt=api.rpc(when(op.kind){"shared_inspection"->"coll_pat_save_inspection";"catalog_delete"->"coll_pat_delete_collector";else->"coll_pat_apply"},JSONObject().put("operation",JSONObject(op.body)),account)
                 check(receipt.getString("operation_id")==op.operationId&&receipt.getLong("generation")==op.generation&&receipt.getString("project_id")==op.project){"Ricevuta non corrispondente"}
                 db.withTransaction{
                     dao.acknowledge(op.operationId)
@@ -266,6 +335,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
                         val sent=dao.settingValue(account,"catalog-upload:"+op.operationId)?.let(::JSONObject)?:JSONObject(op.body).getJSONObject("payload")
                         for(item in sent.getJSONArray("items").objects()){
                             val data=item.getJSONObject("data");val local=dao.catalogNow(account).find{it.id==data.getString("id")}
+                            dao.setting(Setting(account,"server-known:"+data.getString("id"),"true"))
                             if(local!=null&&JSONObject(local.body).toString()==data.toString())dao.putCatalog(local.copy(sync="RICEVUTO_SERVER"))
                         }
                         sent.optJSONObject("provenance")?.let{p->dao.imports(account).find{it.id==p.getString("id")}?.let{dao.saveImport(it.copy(state="RICEVUTO_SERVER"))}}
@@ -282,7 +352,7 @@ class Repository(val context:Context,databaseName:String="pilot-v1.db",sessionPr
             }
         }
         PhotoRepository(this).syncAll(account)
-        catalog();downloadHistory(false);dao.visitsNow(account).none{it.sync=="IN_ATTESA"}
+        catalog();downloadHistory(false);dao.setting(Setting(account,"database-last-success",Instant.now().toString()));dao.visitsNow(account).none{it.sync=="IN_ATTESA"}
     }
     suspend fun fieldSettings()=dao.settingValue(owner(),"field-settings-v014")?.let{FieldSettings.parse(JSONObject(it))}?:FieldSettings()
     suspend fun saveSettings(value:FieldSettings){dao.setting(Setting(owner(),"field-settings-v014",value.json().toString()))}
