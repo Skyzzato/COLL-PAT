@@ -34,7 +34,7 @@ fun frequencyLabel(c:JSONObject,now:Instant=Instant.now()):String {
     val n=c.numberOrNull(field)?.takeIf{it>0}?:return "Frequenza ispezione non configurata"
     return "Frequenza ispezione: ogni ${kotlin.math.round(365.2425/2/n).toInt()} giorni (intervallo nominale)"
 }
-fun roleLabel(role:String?)=when(role){"admin"->"Amministratore";"inspector"->"Ispettore";else->"Non disponibile"}
+fun roleLabel(role:String?)=when(role){"admin"->"Amministratore";"inspector"->"Operatore";"viewer"->"Visualizzatore";else->"Non disponibile"}
 fun lastRefreshLabel(value:String?):String = value?.let { runCatching { "(ultimo aggiornamento in data "+DateTimeFormatter.ofPattern("dd/MM/yyyy 'alle' HH:mm",Locale.ITALY).withZone(ZoneId.systemDefault()).format(Instant.parse(it))+")" }.getOrNull() }?:"(nessun aggiornamento completato)"
 fun uploadCountLabel(count:Int)="$count ${if(count==1)"elemento" else "elementi"} in coda di caricamento"
 
@@ -53,6 +53,13 @@ fun queuedLogicalIds(queue:List<Pending>,largePayloads:Map<String,String> = empt
 }
 
 fun nextPointLabel(p:JSONObject,points:List<JSONObject>,segments:List<JSONObject>):String {
+    val id=p.getString("id")
+    val manual=segments.filter{it.available()&&it.optString("flow_direction")=="UNSPECIFIED"&&id in listOf(it.optString("from_id"),it.optString("to_id"))&&it.memberships().any{c->c in p.memberships()}}
+    val links=manual.map{s->val other=if(s.optString("from_id")==id)s.optString("to_id") else s.optString("from_id");val code=points.find{it.optString("id")==other}?.optString("code")?:other
+        "Collegamento schematico a #$code: "+(s.numberOrNull("length_m")?.let{"%.1f m".format(Locale.ITALY,it)}?:"distanza non disponibile")+" · verso non definito"}
+    return (listOf(directedNextPointLabel(p,points,segments.filter{it.optString("flow_direction")!="UNSPECIFIED"}))+links).joinToString("\n")
+}
+private fun directedNextPointLabel(p:JSONObject,points:List<JSONObject>,segments:List<JSONObject>):String {
     val id=p.getString("id");val byId=points.filter{it.available()}.associateBy{it.getString("id")}
     val outgoing=segments.filter{it.available()&&it.optString("from_id")==id&&it.memberships().any{c->c in p.memberships()}}
     val explicit=p.optJSONArray("next_ids")?.strings().orEmpty()

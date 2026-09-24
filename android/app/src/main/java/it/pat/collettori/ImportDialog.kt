@@ -21,7 +21,7 @@ import org.json.JSONObject
     var order by remember{mutableStateOf(true)};var tolerance by remember{mutableStateOf("5")};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};var original by remember{mutableStateOf<String?>(null)}
     DisposableEffect(Unit){onDispose{original?.let{java.io.File(it).delete()}}}
     var identityCatalog by remember{mutableStateOf(emptyList<CatalogItem>())}
-    fun task(block:suspend()->Unit){if(busy)return;busy=true;error="";scope.launch{try{block()}catch(e:TimeoutCancellationException){error="Aggiornamento del catalogo non riuscito. Verifica la connessione e riprova."}catch(e:CancellationException){throw e}catch(e:OutOfMemoryError){archive=null;plan=null;error="Memoria insufficiente: dividere il file in layer più piccoli. Nessuna importazione confermata."}catch(e:Exception){error=when{
+    fun task(block:suspend()->Unit){if(busy)return;busy=true;error="";scope.launch{try{block()}catch(e:TimeoutCancellationException){error="Aggiornamento del catalogo non riuscito. Verifica la connessione e riprova."}catch(e:CancellationException){throw e}catch(e:OutOfMemoryError){archive=null;plan=null;error="Memoria insufficiente: dividere il file in layer più piccoli. Nessuna importazione confermata."}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=when{
         e is ApiError->friendlyError(e)
         e is IllegalArgumentException||e is IllegalStateException->e.message?.takeUnless{it.isBlank()||it=="Failed requirement."||it=="Check failed."}?:"File o configurazione non validi: verifica i campi e riprova."
         else->"Impossibile leggere o importare il file. Verifica che lo ZIP sia completo e riprova."
@@ -37,7 +37,7 @@ import org.json.JSONObject
         archive=null;plan=null;mappings=emptyList();original?.let{java.io.File(it).delete()};original=null
         val file=withContext(Dispatchers.IO){
             val dir=java.io.File(repo.context.cacheDir,"import-preview").apply{mkdirs()};val target=java.io.File(dir,java.util.UUID.randomUUID().toString()+".zip")
-            try{repo.context.contentResolver.openInputStream(uri)!!.use{input->java.io.FileOutputStream(target).use{out->val buffer=ByteArray(8192);var total=0;while(true){val n=input.read(buffer);if(n<0)break;total+=n;require(total<=Shapefile.MAX_BYTES){"ZIP compresso oltre 32 MiB"};out.write(buffer,0,n)};out.fd.sync()}};target}catch(e:Exception){target.delete();throw e}
+            try{repo.context.contentResolver.openInputStream(uri)!!.use{input->java.io.FileOutputStream(target).use{out->val buffer=ByteArray(8192);var total=0;while(true){val n=input.read(buffer);if(n<0)break;total+=n;require(total<=Shapefile.MAX_BYTES){"ZIP compresso oltre 32 MiB"};out.write(buffer,0,n)};out.fd.sync()}};target}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;target.delete();throw e}
         };original=file.absolutePath
         source=repo.context.contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())it.getString(0).substringBeforeLast('.') else ""}.orEmpty()
         if(source.length<3)source="sorgente-shapefile"
@@ -99,7 +99,7 @@ import org.json.JSONObject
                     }
                     if(mode=="ORDERED"&&layer.kind=="point"&&listOf("previous","next","sequence","chainage").all{map.fields[it].isNullOrBlank()}){
                         Text("Ordine non presente nel file. Indica ramo e ordine di ogni punto: il numero 1 è l’origine del ramo. Controlla poi i collegamenti sulla mappa.")
-                        layer.features.forEach{f->val fp=featureFingerprint(f);val label=map.value(f,"code").ifBlank{map.recordKey(f)}
+                        CollapsibleItems("Pozzetti da ordinare",layer.features,{featureFingerprint(it)}){f->val fp=featureFingerprint(f);val label=map.value(f,"code").ifBlank{map.recordKey(f)}
                             Field("Ordine · $label",map.fields["order:$fp"].orEmpty()){value->mappings=mappings.map{if(it.layer==layer.name)it.copy(fields=it.fields+("guided_order" to "true")+("order:$fp" to value))else it}}
                             Field("Ramo · $label",map.fields["branch:$fp"].orEmpty()){value->mappings=mappings.map{if(it.layer==layer.name)it.copy(fields=it.fields+("branch:$fp" to value))else it}}
                         }
@@ -128,6 +128,7 @@ import org.json.JSONObject
             Text("${p.warnings.size} avvisi · nessun errore bloccante")
             p.warnings.forEach{Text("• $it",style=MaterialTheme.typography.bodySmall)}
             OfflineMap(p.preview,p.preview.getJSONArray("points").objects(),null,null,null,Modifier.fillMaxWidth().height(300.dp),{},{error=it},p.preview.getJSONArray("points").objects().map{org.maplibre.android.geometry.LatLng(it.getDouble("latitude"),it.getDouble("longitude"))},1)
+            CollapsibleItems("Pozzetti",p.preview.getJSONArray("points").objects(),{it.getString("id")}){point->Text("#"+point.optString("code")+" · "+topologyLabel(point,p.preview.getJSONArray("points").objects()),style=MaterialTheme.typography.bodySmall)}
             if(p.missing.isNotEmpty())Text("Assenti: "+p.missing.take(10).joinToString{JSONObject(it.body).optString("code").ifBlank{it.id}}+if(p.missing.size>10)" …" else "",style=MaterialTheme.typography.bodySmall)
             Text("Gli elementi assenti restano conservati, insieme alle ispezioni e alle foto. Il file originale rimane privato sul telefono.")
             if(repo.authenticated())Text("Dopo la conferma, l’aggiornamento verrà inviato al server. Puoi verificarne l’esito in Server e sincronizzazione.",style=MaterialTheme.typography.bodySmall)

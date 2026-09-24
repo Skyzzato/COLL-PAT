@@ -20,6 +20,8 @@ fun localStyle(pack:JSONObject,points:List<JSONObject>,selected:String?,position
         feature(segment.getJSONObject("geometry"),JSONObject().put("code",c?.optString("code").orEmpty()).put("collector_id",c?.optString("id").orEmpty()).put("display_color",resolvedCollectorColor(c,settings)).put("display_width",resolvedCollectorWidth(c,settings)))
     }))
     source("collector-anchors",fc(collectorLabelFeatures(pack)))
+    val proposed=pack.optJSONObject("proposed_point")
+    source("proposed-point",fc(if(proposed!=null)listOf(feature(pointGeometry(proposed.getDouble("latitude"),proposed.getDouble("longitude"))))else emptyList()))
     source("points",fc(points.map{feature(pointGeometry(it.getDouble("latitude"),it.getDouble("longitude")),JSONObject().put("id",it.getString("id")).put("code",it.getString("code")).put("status_color",it.optString("status_color",InspectionState.DUE.color)).put("under_asphalt",it.optBoolean("under_asphalt")).put("symbol",resolvedSymbol(it,collectors,settings,pack.optString("context_collector"))))}))
     source("selected",fc(points.filter{it.getString("id")==selected}.map{feature(pointGeometry(it.getDouble("latitude"),it.getDouble("longitude")))}))
     val candidateIds=position?.optJSONArray("candidate_ids")
@@ -57,6 +59,7 @@ fun localStyle(pack:JSONObject,points:List<JSONObject>,selected:String?,position
     layers.put(JSONObject().put("id","asphalt-mark").put("type","symbol").put("source","points").put("minzoom",settings.minZoomPozzetti.toDouble()).put("filter",JSONArray("[\"==\",\"under_asphalt\",true]"))
         .put("layout",JSONObject().put("text-field","×").put("text-font",JSONArray(listOf("Noto Sans Regular"))).put("text-size",settings.iconSize.toDouble()*2).put("text-allow-overlap",true).put("visibility",if(settings.asphalt)"visible" else "none"))
         .put("paint",JSONObject().put("text-color","#202020").put("text-halo-color","#ffffff").put("text-halo-width",.5)))
+    layers.put(JSONObject("""{"id":"coordinate-flag","type":"symbol","source":"proposed-point","layout":{"icon-image":"coordinate-flag","icon-anchor":"bottom","icon-size":1,"icon-allow-overlap":true}}"""))
     val collectorLayer=layers.objects().first{it.getString("id")=="collector-labels"};val index=(0 until layers.length()).first{layers.getJSONObject(it).getString("id")=="collector-labels"};layers.remove(index);layers.put(collectorLayer)
     if(pack.optBoolean("osm")) {
         val reordered=JSONArray().put(layers.getJSONObject(0)).put(JSONObject().put("id","osm-tiles").put("type","raster").put("source","osm"))

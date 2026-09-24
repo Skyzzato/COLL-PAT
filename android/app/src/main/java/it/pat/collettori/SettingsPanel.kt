@@ -23,8 +23,9 @@ import kotlinx.coroutines.*
     }}
 }
 @Composable fun SettingsPanel(repo:Repository,settings:FieldSettings,onSettings:(FieldSettings)->Unit,catalog:List<CatalogItem>,visits:List<Visit>,queue:List<Pending>,onAccount:()->Unit,onMessage:(String)->Unit,onOpen:(String,String)->Unit={_,_->},onArchiveExport:()->Unit){
+    val accessRole=repo.observedRole()
     val scope=rememberCoroutineScope();var busy by remember{mutableStateOf(false)}
-    fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:Exception){onMessage(friendlyError(e))}finally{busy=false}}}
+    fun task(block:suspend()->Unit){if(busy)return;busy=true;scope.launch{try{block()}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;onMessage(friendlyError(e))}finally{busy=false}}}
     var showQueue by remember{mutableStateOf(false)}
     var showImport by remember{mutableStateOf(false)}
     val stored by repo.dao.settings(repo.owner()).collectAsState(emptyList())
@@ -48,14 +49,14 @@ import kotlinx.coroutines.*
             }}
         }
         SettingsSection("GPS e rilevazione",R.drawable.ic_target){
-            Choice("Distanza massima dal pozzetto",settings.maxDistance.toInt().toString(),DISTANCE_STEPS.map{it.toInt().toString() to "${it.toInt()} m"}){onSettings(settings.copy(maxDistance=it.toDouble()))}
-            Choice("Accuratezza GPS massima ammessa",settings.maxAccuracy.toInt().toString(),ACCURACY_STEPS.map{it.toInt().toString() to "${it.toInt()} m"}){onSettings(settings.copy(maxAccuracy=it.toDouble()))}
+            ThresholdSlider("Distanza massima dal pozzetto",settings.maxDistance,DISTANCE_STEPS){onSettings(settings.copy(maxDistance=it))}
+            ThresholdSlider("Accuratezza GPS massima ammessa",settings.maxAccuracy,ACCURACY_STEPS){onSettings(settings.copy(maxAccuracy=it))}
             stored.firstOrNull{it.key=="settings-normalized"}?.let{Text(it.value,style=MaterialTheme.typography.bodySmall)}
             Text("Accuratezza e distanza sono controlli indipendenti. La soglia usata viene conservata nella rilevazione.",style=MaterialTheme.typography.bodySmall)
         }
         SettingsSection("Ispezioni",R.drawable.ic_history){
             Text("La periodicità segue le visite previste per ciascun collettore.",style=MaterialTheme.typography.bodySmall)
-            Text("Il CSV comprende le ispezioni concluse nel trimestre civile corrente.",style=MaterialTheme.typography.bodySmall)
+            Text("CSV delle ispezioni concluse, inclusi gli impedimenti. Il periodo si sceglie prima dell’esportazione.",style=MaterialTheme.typography.bodySmall)
             QuarterExportButton(repo,onMessage)
             TextButton(onClick=onArchiveExport){Text("Esporta archivio di recupero")}
         }
@@ -79,10 +80,11 @@ import kotlinx.coroutines.*
         }
         SettingsSection("Account",R.drawable.ic_account){AccountPanel(repo,onAccount)}
         SettingsSection("Dati cartografici",R.drawable.ic_pipe){
-            if(repo.canManageCatalog()){
+            if(accessRole=="admin"){
                 Text("Seleziona uno ZIP: l'app riconosce automaticamente layer e campi, poi mostra l'anteprima prima dell'aggiornamento del progetto.",style=MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick={showImport=true}){Text("Importa shapefile")}
                 AdminPanel(repo,catalog,visits.size,onMessage)
+                SettingsSection("Dataset di collaudo",R.drawable.ic_info){SyntheticDatasetPanel(repo,catalog,onMessage)}
             }else Text("L’importazione e la modifica dei dati cartografici sono riservate al responsabile del progetto.",style=MaterialTheme.typography.bodySmall)
         }
         SettingsSection("Informazioni",R.drawable.ic_info){
@@ -112,9 +114,9 @@ import kotlinx.coroutines.*
         Button(enabled=!busy,onClick={scope.launch{busy=true;try{
             require(email.contains('@')&&password.isNotBlank()){ "Inserisci email e password" }
             prefs.edit().putString("url",url.trim()).putString("key",key.trim()).putString("project",project.trim()).apply()
-            if(register){require(password.length>=8){"Usa una password di almeno 8 caratteri"};require(password==confirmation){"Le password non coincidono"};repo.api.register(url.trim(),key.trim(),email,password);password="";confirmation="";register=false;message="Account creato: verifica l’email, poi accedi. L’accesso al progetto richiede l’abilitazione del responsabile."}
+            if(register){require(password.length>=8){"Usa una password di almeno 8 caratteri"};require(password==confirmation){"Le password non coincidono"};repo.api.register(url.trim(),key.trim(),email,password,project.trim());password="";confirmation="";register=false;message="Account creato: verifica l’email, poi accedi. L’accesso al progetto richiede l’abilitazione del responsabile."}
             else{repo.api.login(url.trim(),key.trim(),email,password,project.trim());password="";repo.checkVersion();repo.prepareWorkspace();repo.catalog();repo.dao.resumeAuth(repo.owner());repo.syncNow();onChange()}
-        }catch(e:Exception){message=if(e is ApiError&&e.code==400)"Accesso non riuscito. Verifica email, password e conferma dell’account." else friendlyError(e)}finally{busy=false}}},modifier=Modifier.fillMaxWidth()){Text(if(register)"Crea account" else "Accedi")}
+        }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;message=if(e is ApiError&&e.code==400)"Accesso non riuscito. Verifica email, password e conferma dell’account." else friendlyError(e)}finally{busy=false}}},modifier=Modifier.fillMaxWidth()){Text(if(register)"Crea account" else "Accedi")}
         TextButton(enabled=!busy,onClick={register=!register;message=""}){Text(if(register)"Hai già un account? Accedi" else "Registra un account")}
         TextButton(onClick={message="Il recupero della password non è ancora disponibile in questa versione."}){Text("Recupera la password")}
         SettingsSection("Configurazione collegamento",R.drawable.ic_settings,url.isBlank()||key.isBlank()){

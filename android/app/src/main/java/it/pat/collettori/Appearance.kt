@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 
 val lineColors=listOf("#176D73" to "Verde petrolio","#254EBC" to "Blu","#783E9F" to "Viola","#8D4617" to "Marrone","#AF235A" to "Magenta")
 fun resolvedCollectorColor(c:JSONObject?,settings:FieldSettings)=c?.optString("display_color")?.takeIf{it.matches(Regex("#[0-9a-fA-F]{6}"))}?:settings.lineColor
@@ -33,6 +34,6 @@ fun resolvedSymbol(p:JSONObject,collectors:List<JSONObject>,settings:FieldSettin
     }},confirmButton={TextButton(enabled=!busy,onClick={busy=true;scope.launch{try{
         val changes=JSONObject().put("symbol",symbol.ifBlank{null}?:JSONObject.NULL)
         if(collector)changes.put("display_color",color.ifBlank{null}?:JSONObject.NULL).put("display_width",width.toIntOrNull()?:JSONObject.NULL)
-        repo.patchObject(item.getString("id"),changes);dismiss();message("Aspetto salvato sul dispositivo · invio in coda")
-    }catch(e:Exception){error=friendlyError(e)}finally{busy=false}}}){Text("Salva")}},dismissButton={TextButton(onClick=dismiss){Text("Annulla")}})
+        repo.writes.async{repo.patchObject(item.getString("id"),changes)}.await();dismiss();message("Aspetto salvato sul dispositivo · invio in coda")
+    }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=friendlyError(e)}finally{busy=false}}}){Text("Salva")}},dismissButton={TextButton(onClick=dismiss){Text("Annulla")}})
 }

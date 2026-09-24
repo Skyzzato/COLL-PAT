@@ -37,19 +37,20 @@ class Api(private val store:SessionStore,private val client:OkHttpClient=OkHttpC
                     val data=r.body?.bytes()?:byteArrayOf()
                     if(!r.isSuccessful){val error=runCatching{JSONObject(String(data))}.getOrNull();throw ApiError(r.code,error?.optString("message",error.optString("error_description","Richiesta rifiutata"))?.take(500)?:"Richiesta rifiutata",error?.optString("code").orEmpty(),path.substringBefore('?'))}
                     if(continuation.isActive)continuation.resume(data)
-                }catch(e:Exception){if(continuation.isActive)continuation.resumeWithException(e)}}}
+                }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;if(continuation.isActive)continuation.resumeWithException(e)}}}
             })
         }
     }
     suspend fun deleteStorage(path:String,account:String){request("/storage/v1/object/coll-pat-photos",JSONObject().put("prefixes",org.json.JSONArray(listOf(path))),account,delete=true)}
-    suspend fun register(base:String,key:String,email:String,password:String){
-        raw(base,"/auth/v1/signup",key,body=JSONObject().put("email",email.trim()).put("password",password))
+    suspend fun register(base:String,key:String,email:String,password:String,project:String=AppSpec.LOCAL_PROJECT){
+        raw(base,"/auth/v1/signup",key,body=JSONObject().put("email",email.trim()).put("password",password).put("data",JSONObject().put("application","COLL-PAT").put("coll_pat_project",project)))
     }
     suspend fun login(base:String,key:String,email:String,password:String,project:String):JSONObject{
         java.util.UUID.fromString(project)
         val result=JSONObject(String(raw(base,"/auth/v1/token?grant_type=password",key,body=JSONObject().put("email",email.trim()).put("password",password))))
         val session=result.put("base",base.trimEnd('/')).put("public_key",key).put("project_id",project)
-            .put("user_id",result.getJSONObject("user").getString("id")).put("username",email).put("protocol",AppSpec.PROTOCOL)
+            .put("user_id",result.getJSONObject("user").getString("id")).put("username",email).put("protocol",AppSpec.PROTOCOL).put("session_epoch",java.util.UUID.randomUUID().toString())
+        raw(base,"/rest/v1/rpc/coll_pat_request_access",key,result.getString("access_token"),JSONObject().put("p_project",project))
         val status=JSONObject(String(raw(base,"/rest/v1/rpc/coll_pat_status",key,result.getString("access_token"),JSONObject().put("p_project",project))))
         session.put("generation",status.getLong("generation")).put("role",status.getString("role"))
         store.save(session);return session

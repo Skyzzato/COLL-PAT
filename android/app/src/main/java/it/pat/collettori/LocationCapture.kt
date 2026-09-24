@@ -105,7 +105,7 @@ class LocationCapture(private val context:Context):EvidenceCollector,InspectionC
                 if(userCancelled)e.put("error","acquisizione annullata dall'operatore") else throw e1
             }
             catch(e1:SecurityException){e.put("error","permesso revocato")}
-            catch(e1:Exception){e.put("error","localizzazione non disponibile: "+e1.javaClass.simpleName)}
+            catch(e1:Exception){if(e1 is kotlinx.coroutines.CancellationException)throw e1;e.put("error","localizzazione non disponibile: "+e1.javaClass.simpleName)}
             finally{cancellation.cancel();requestCancellation=null}
         }
         return e.put("acquired_at",Instant.now().toString())

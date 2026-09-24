@@ -36,8 +36,9 @@ import org.json.JSONObject
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable fun InspectionEditor(repo:Repository,visit:Visit,point:JSONObject?,collectorLabel:String,busy:Boolean,message:String,onMessage:(String)->Unit,onBack:()->Unit,captureFactory:()->InspectionCapture={LocationCapture(repo.context)}){
+    val accessRole=repo.observedRole()
     var bodyText by rememberSaveable(visit.id,visit.operational){mutableStateOf(visit.body)}
-    val body=JSONObject(bodyText);val sheet=body.getJSONObject("sheet");val draft=visit.operational=="BOZZA"&&!isCancelled(visit)
+    val body=JSONObject(bodyText);val sheet=body.getJSONObject("sheet");val draft=visit.operational=="BOZZA"&&!isCancelled(visit)&&accessRole in setOf("admin","inspector")
     DisposableEffect(visit.id){repo.editing.add(visit.id);onDispose{repo.editing.remove(visit.id)}}
     val scope=rememberCoroutineScope();var saveState by remember{mutableStateOf("")};var committing by remember{mutableStateOf(false)}
     var latestWrite by remember{mutableStateOf<kotlinx.coroutines.Job?>(null)}
@@ -64,14 +65,14 @@ import org.json.JSONObject
         bodyText=text;saveState="Salvataggio…"
         val previous=latestWrite
         // Application scope survives leaving the editor; FIFO avoids older notes overtaking new ones.
-        latestWrite=repo.writes.launch{previous?.join();try{repo.saveDraft(visit.id,JSONObject(text));saveState="Bozza salvata sul dispositivo"}catch(e:Exception){saveState="Errore salvataggio: ${e.message}"}}
+        latestWrite=repo.writes.launch{previous?.join();try{repo.saveDraft(visit.id,JSONObject(text));saveState="Bozza salvata sul dispositivo"}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;saveState="Errore salvataggio: ${e.message}"}}
     }
     fun change(key:String,value:Any){val b=JSONObject(bodyText)
         if(key=="unsafe")b.put("sheet",applyUnsafe(b.getJSONObject("sheet"),value as Boolean))
         else {b.getJSONObject("sheet").put(key,value);if(key=="anomaly_note")b.getJSONObject("sheet").put("notes","")}
         persist(b.toString())
     }
-    fun leave(){if(feedback!=null){feedback=null;onBack();return};if(committing)return;capture?.cancel();pendingGps=null;gpsDialog=false;exceptionMode=false;committing=true;scope.launch{latestWrite?.join();try{if(draft)repo.saveDraft(visit.id,JSONObject(bodyText));onBack()}catch(e:Exception){onMessage(friendlyError(e))}finally{committing=false}}}
+    fun leave(){if(feedback!=null){feedback=null;onBack();return};if(committing)return;capture?.cancel();pendingGps=null;gpsDialog=false;exceptionMode=false;committing=true;scope.launch{latestWrite?.join();try{if(draft)repo.saveDraft(visit.id,JSONObject(bodyText));onBack()}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;onMessage(friendlyError(e))}finally{committing=false}}}
     BackHandler{leave()}
     fun commit(status:String?){
         if(committing)return;committing=true;val submitted=JSONObject(bodyText)
@@ -79,7 +80,7 @@ import org.json.JSONObject
             val previous=latestWrite
             val saved=repo.writes.async{previous?.join();if(status==null)repo.saveDraft(visit.id,submitted,queueNow=true) else repo.complete(visit.id,submitted,status)}.await()
             onMessage("");feedback=SaveFeedback(saved.id,JSONObject(saved.body).getLong("local_edit"),status==null,SystemClock.elapsedRealtime())
-        }catch(e:CancellationException){throw e}catch(e:Exception){committing=false;onMessage(friendlyError(e))}}
+        }catch(e:CancellationException){throw e}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;committing=false;onMessage(friendlyError(e))}}
     }
     fun startCapture(){
         if(saving||capture!=null||pendingGps!=null||committing)return
@@ -99,13 +100,13 @@ import org.json.JSONObject
             if(accurateEvidence(event)&&event.getJSONObject("local_evaluation").getString("state")=="COMPATIBILE"){
                 event.put("match_outcome","VERIFIED");repo.appendEvent(visit.id,event);onMessage("Posizione registrata · stabilizzazione 3 s e campionamento utile di almeno 5 s")
             }else{onMessage("Rilievo non utilizzabile: accuratezza o corrispondenza insufficienti. Riprova, correggi il pozzetto oppure scegli Non rilevare GPS.")}
-        }catch(e:CancellationException){onMessage("Rilevazione annullata: nessun evento registrato");throw e}catch(e:Exception){onMessage(friendlyError(e))}finally{capture=null;seconds=0}}
+        }catch(e:CancellationException){onMessage("Rilevazione annullata: nessun evento registrato");throw e}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;onMessage(friendlyError(e))}finally{capture=null;seconds=0}}
     }
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){granted->if(granted[android.Manifest.permission.ACCESS_FINE_LOCATION]==true)startCapture() else scope.launch{latestWrite?.join();repo.beginGpsAttempt(visit.id);onMessage("Permesso posizione precisa negato. Puoi riprovare o scegliere Non rilevare GPS.")}}
     fun locate(){if(repo.context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED)startCapture() else permission.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION,android.Manifest.permission.ACCESS_COARSE_LOCATION))}
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().padding(16.dp).verticalScroll(rememberScrollState())){
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){TextButton(enabled=!committing||feedback!=null,onClick={leave()}){Text("← Torna")};IconButton(enabled=!saving,onClick={cancelVisit=true}){Icon(painterResource(R.drawable.ic_trash),"Elimina ispezione")}}
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){TextButton(enabled=!committing||feedback!=null,onClick={leave()}){Text("← Torna")};if(accessRole in setOf("admin","inspector"))IconButton(enabled=!saving,onClick={cancelVisit=true}){Icon(painterResource(R.drawable.ic_trash),"Elimina ispezione")}}
         Text(point?.optString("code")?:visit.manholeId,style=MaterialTheme.typography.headlineMedium)
         Text(point?.optString("description","")?:"Anagrafica storica")
         Text(collectorLabel,style=MaterialTheme.typography.bodyMedium)
@@ -140,7 +141,7 @@ import org.json.JSONObject
                 Text(precisionText(event),style=MaterialTheme.typography.bodySmall)
                 Text("Età della misura: ${event.numberOrNull("age_s")?.let{"%.1f s".format(it)}?:"non disponibile"}",style=MaterialTheme.typography.bodySmall)
             }
-            if(!event.has("cancelled")&&!isCancelled(visit))IconButton(enabled=!saving,onClick={cancelEvent=event.getString("id")}){Icon(painterResource(R.drawable.ic_trash),"Annulla rilevazione GPS")}
+            if(accessRole in setOf("admin","inspector")&&!event.has("cancelled")&&!isCancelled(visit))IconButton(enabled=!saving,onClick={cancelEvent=event.getString("id")}){Icon(painterResource(R.drawable.ic_trash),"Annulla rilevazione GPS")}
         }}
         if(persisted.optBoolean("evidence_rectified"))Text("Rilevazione aggiornata",color=MaterialTheme.colorScheme.error)
         if(draft)OutlinedButton(enabled=!saving,onClick={locate()}){ActionIcon(R.drawable.ic_target);Text("Rileva posizione")}
@@ -185,13 +186,13 @@ import org.json.JSONObject
             OutlinedButton(enabled=!saving,onClick={showImpediment=true},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){ActionIcon(R.drawable.ic_warning);Text("Registra impedimento")}
         }
         visit.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-        if(visit.sync=="CONFLICT")OutlinedButton(onClick={scope.launch{try{repo.reloadConflict(visit.id);onBack()}catch(e:Exception){onMessage(friendlyError(e))}}}){Text("Conserva copia locale e apri versione server")}
+        if(accessRole in setOf("admin","inspector")&&visit.sync=="CONFLICT")OutlinedButton(onClick={scope.launch{try{repo.reloadConflict(visit.id);onBack()}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;onMessage(friendlyError(e))}}}){Text("Conserva copia locale e apri versione server")}
         Spacer(Modifier.height(24.dp))
     }
     if(gpsDialog){
         var reason by rememberSaveable{mutableStateOf("")}
         AlertDialog(onDismissRequest={gpsDialog=false},title={Text("Non rilevare GPS")},text={Field("Motivazione non rilievo GPS",reason){reason=it}},
-            confirmButton={TextButton(enabled=reason.isNotBlank()&&!committing,onClick={scope.launch{try{latestWrite?.join();repo.recordNoGps(visit.id,reason);gpsDialog=false}catch(e:Exception){onMessage(friendlyError(e))}}}){Text("OK")}},
+            confirmButton={TextButton(enabled=reason.isNotBlank()&&!committing,onClick={scope.launch{try{latestWrite?.join();repo.recordNoGps(visit.id,reason);gpsDialog=false}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;onMessage(friendlyError(e))}}}){Text("OK")}},
             dismissButton={TextButton(onClick={gpsDialog=false}){Text("ANNULLA")}})
     }
     feedback?.let{saved->
@@ -199,9 +200,9 @@ import org.json.JSONObject
         LaunchedEffect(visit.body,visit.sync){photoPending=repo.authenticated()&&PhotoRepository(repo).list(visit).any{it.optString("uploadStatus")!="UPLOADED"}}
         AlertDialog(onDismissRequest={leave()},title={Text(saved.title(visit))},text={Column{Text(saved.detail(visit));if(photoPending)Text("Fotografie: caricamento ancora in coda")}},confirmButton={TextButton(onClick={leave()}){Text("Chiudi")}})
     }
-    changeModel?.let{model->AlertDialog(onDismissRequest={changeModel=null},title={Text("Cambia modello")},text={Text("I controlli vengono reimpostati per il nuovo modello. Note, anomalie descritte e foto restano conservate.")},confirmButton={TextButton(onClick={scope.launch{try{latestWrite?.join();val saved=repo.changeTemplate(visit.id,JSONObject(bodyText),model);bodyText=saved.body;changeModel=null}catch(e:Exception){onMessage(friendlyError(e))}}}){Text("Cambia modello")}},dismissButton={TextButton(onClick={changeModel=null}){Text("Indietro")}})}
+    changeModel?.let{model->AlertDialog(onDismissRequest={changeModel=null},title={Text("Cambia modello")},text={Text("I controlli vengono reimpostati per il nuovo modello. Note, anomalie descritte e foto restano conservate.")},confirmButton={TextButton(onClick={scope.launch{try{latestWrite?.join();val saved=repo.changeTemplate(visit.id,JSONObject(bodyText),model);bodyText=saved.body;changeModel=null}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;onMessage(friendlyError(e))}}}){Text("Cambia modello")}},dismissButton={TextButton(onClick={changeModel=null}){Text("Indietro")}})}
     if(showImpediment)AlertDialog(onDismissRequest={showImpediment=false},title={Text("Registra impedimento")},text={Column{Text("Documenta il tentativo non eseguito; non vale come controllo periodico.");Field("Motivo",sheet.optString("impediment_reason")){change("impediment_reason",it)}}},confirmButton={TextButton(enabled=sheet.optString("impediment_reason").isNotBlank()&&!saving,onClick={showImpediment=false;commit("IMPEDITO")}){Text("Registra impedimento")}},dismissButton={TextButton(onClick={showImpediment=false}){Text("Indietro")}})
     if(cancelVisit)PermanentDeleteDialog(repo,"inspection",visit.id,"Ispezione · "+(point?.optString("code")?:visit.id),{cancelVisit=false},{cancelVisit=false;onBack()},onMessage)
-    if(cancelEvent!=null)CancelDialog("rilevazione",{cancelEvent=null}){reason->val event=cancelEvent;scope.launch{try{latestWrite?.join();repo.cancel(visit.id,event,reason);onMessage("Rilevazione rettificata")}catch(e:Exception){onMessage(friendlyError(e))}};cancelEvent=null}
+    if(cancelEvent!=null)CancelDialog("rilevazione",{cancelEvent=null}){reason->val event=cancelEvent;scope.launch{try{latestWrite?.join();repo.cancel(visit.id,event,reason);onMessage("Rilevazione rettificata")}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;onMessage(friendlyError(e))}};cancelEvent=null}
 }
 val fieldLabels=mapOf("cover" to "Botola e telaio","deposits" to "Depositi e materiali estranei","flow" to "Deflusso","walls" to "Pareti e canalette","damage" to "Danni, infiltrazioni e radici","closure" to "Richiusura","restored" to "Ripristino area","surface" to "Condizioni del manto","subsidence" to "Avvallamenti / cedimenti","accessible" to "Accessibile","opened" to "Apertura effettuata","cleaning" to "Pulizia","unsafe" to "Condizioni non sicure","raise_needed" to "Rimessa in quota necessaria","road_repair_needed" to "Ripristino stradale necessario","impediment_reason" to "Motivo impedimento","exception_reason" to "Motivazione GPS")

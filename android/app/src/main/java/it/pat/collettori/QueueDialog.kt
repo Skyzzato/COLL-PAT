@@ -24,10 +24,12 @@ fun logicalQueue(queue:List<Pending>,visits:List<Visit>,settings:List<Setting>):
     return result+settings.filter{it.key.startsWith("deletion-state:")&&it.value.contains("allegati in attesa")}.map{QueueEntry("storage_delete:"+it.key.substringAfter(':'),"Rimozione allegati eliminati","IN_ATTESA",it.value,"","",emptyList(),emptyList())}
 }
 @Composable fun QueueDialog(repo:Repository,queue:List<Pending>,visits:List<Visit>,settings:List<Setting>,dismiss:()->Unit,message:(String)->Unit,onOpen:(String,String)->Unit={_,_->}){
+    val accessRole=repo.observedRole()
     val catalog by repo.dao.catalog(repo.owner()).collectAsState(emptyList())
     val entries=remember(queue,visits,settings){logicalQueue(queue,visits,settings)};val scope=rememberCoroutineScope()
     Dialog(onDismissRequest=dismiss,properties=DialogProperties(usePlatformDefaultWidth=false)){Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()){Column(Modifier.padding(16.dp)){
         Text("Coda di sincronizzazione · ${entries.size}",style=MaterialTheme.typography.headlineSmall)
+        repo.simulatedRole()?.let{role->Row{Text("Simulazione: "+roleLabel(role),Modifier.weight(1f));TextButton(onClick={repo.simulate(null)}){Text("Termina simulazione")}}}
         if(entries.isEmpty())Text("Nessun elemento in attesa")
         LazyColumn(Modifier.weight(1f)){items(entries,key={it.id}){entry->var expanded by remember{mutableStateOf(false)}
             Card(Modifier.fillMaxWidth().padding(vertical=5.dp)){Column(Modifier.padding(12.dp)){
@@ -38,7 +40,7 @@ fun logicalQueue(queue:List<Pending>,visits:List<Visit>,settings:List<Setting>):
                 TextButton(onClick={expanded=!expanded}){Text("Dettaglio · ${entry.operations.size} operazioni · ${entry.photos.size} fotografie")}
                 if(expanded){entry.operations.forEach{Text(it.kind+" · "+it.state,style=MaterialTheme.typography.bodySmall)};entry.photos.forEach{Text("Foto · "+it.optString("uploadStatus")+" · "+it.optString("error"),style=MaterialTheme.typography.bodySmall)}}
                 if(visit!=null||item!=null)TextButton(onClick={dismiss();onOpen(if(visit!=null)"inspection" else item!!.kind,itemId)}){Text("Apri oggetto")}
-                if(entry.id.startsWith("permanent_delete:")&&entry.state=="CONFLICT")TextButton(onClick={dismiss();onOpen("permanent_delete",itemId)}){Text("Verifica e riconferma eliminazione")}
+                if(entry.id.startsWith("permanent_delete:")&&entry.state=="CONFLICT"&&(accessRole=="admin"||accessRole=="inspector"&&entry.operations.any{JSONObject(it.body).optJSONObject("payload")?.optString("kind")=="inspection"}))TextButton(onClick={dismiss();onOpen("permanent_delete",itemId)}){Text("Verifica e riconferma eliminazione")}
                 if(entry.state=="IN_ATTESA")TextButton(onClick={repo.syncNow();message("Nuovo tentativo accodato")}){Text("Riprova")}
                 if(entry.state=="AUTH_REQUIRED")Text("Accedi nuovamente dalla sezione Account.")
                 if(entry.state=="CONFLICT")Text("Apri l’oggetto per verificare la versione server. Per una cancellazione, aggiorna l’anteprima prima di confermare nuovamente.")

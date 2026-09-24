@@ -10,7 +10,7 @@ val localConfig = Properties().apply { rootProject.file("local.properties").take
 fun publicConfig(name: String) = providers.gradleProperty(name).orNull ?: localConfig.getProperty(name, "")
 fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "") + "\""
 require(publicConfig("SUPABASE_PUBLISHABLE_KEY").let { it.isBlank() || it.startsWith("sb_publishable_") }) { "Only SUPABASE_PUBLISHABLE_KEY may be embedded in the Android client" }
-layout.buildDirectory.set(file("build-v021"))
+layout.buildDirectory.set(file("build-v022"))
 android {
     namespace = "it.pat.collettori"
     compileSdk = 36
@@ -18,8 +18,8 @@ android {
         applicationId = "it.pat.collettori.pilot"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.21"
+        versionCode = 22
+        versionName = "0.22"
         buildConfigField("String", "SUPABASE_URL", quoted(publicConfig("SUPABASE_URL")))
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", quoted(publicConfig("SUPABASE_PUBLISHABLE_KEY")))
         buildConfigField("boolean", "PHOTO_UPLOAD_SIMULATED", "false")

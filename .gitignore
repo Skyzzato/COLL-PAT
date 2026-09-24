@@ -23,3 +23,5 @@ android/local.properties
 local-output/
 
 **/build-v021/
+
+**/build-v022/

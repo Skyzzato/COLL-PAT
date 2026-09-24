@@ -27,20 +27,14 @@ fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position
     val coordinate by rememberUpdatedState(onCoordinate)
     val collector by rememberUpdatedState(onCollector)
     val error by rememberUpdatedState(onError)
-    val view=remember{MapLibre.getInstance(context);MapView(context).apply{onCreate(null)}}
+    // Dialogs/scrolling previews need a composited surface; retain SurfaceView for the main map.
+    val view=remember{MapLibre.getInstance(context);MapView(context,org.maplibre.android.maps.MapLibreMapOptions().textureMode(pack.has("proposed_point"))).apply{onCreate(null)}}
     var map by remember{mutableStateOf<MapLibreMap?>(null)}
     var cameraLat by rememberSaveable{mutableStateOf<Double?>(null)}
     var cameraLon by rememberSaveable{mutableStateOf<Double?>(null)}
     var cameraZoom by rememberSaveable{mutableStateOf<Double?>(null)}
     var positioned by remember{mutableStateOf(false)}
-    val picking=onCoordinate!=null
-    val style=remember(pack,points,selected,position,settings,picking){
-        val json=JSONObject(localStyle(pack,points,selected,position,settings))
-        if(picking){
-            val layers=json.getJSONArray("layers").objects().filter{it.optString("id") !in setOf("manholes","labels","selected-ring")}
-            json.put("layers",org.json.JSONArray(layers).put(JSONObject("""{"id":"coordinate-flag","type":"symbol","source":"points","layout":{"icon-image":"coordinate-flag","icon-anchor":"bottom","icon-size":1,"icon-allow-overlap":true}}""")))
-        };json.toString()
-    }
+    val style=remember(pack,points,selected,position,settings){localStyle(pack,points,selected,position,settings)}
     val latestStyle by rememberUpdatedState(style)
     var styleReady by remember{mutableStateOf(false)}
     val sourceCache=remember{mutableMapOf<String,String>()}
@@ -95,8 +89,8 @@ fun OfflineMap(pack:JSONObject,points:List<JSONObject>,selected:String?,position
         styleMap?.getLayerAs<org.maplibre.android.style.layers.SymbolLayer>("asphalt-mark")?.setProperties(org.maplibre.android.style.layers.PropertyFactory.visibility(if(settings.asphalt)"visible" else "none"),org.maplibre.android.style.layers.PropertyFactory.textSize(settings.iconSize*2))
     }}
     LaunchedEffect(map,center){center?.let{map?.animateCamera(CameraUpdateFactory.newLatLngZoom(it.first,if(it.second<0)maxOf(14.5,settings.minZoomPozzetti.toDouble()) else maxOf(17.0,settings.minZoomPozzetti.toDouble())))}}
-    LaunchedEffect(map,points){if(!positioned&&map!=null&&points.isNotEmpty()){
-        val all=points.map{LatLng(it.getDouble("latitude"),it.getDouble("longitude"))}
+    LaunchedEffect(map,points){if(!positioned&&map!=null&&(points.isNotEmpty()||pack.optJSONObject("proposed_point")!=null)){
+        val all=if(bounds.isNotEmpty())bounds else (points+listOfNotNull(pack.optJSONObject("proposed_point"))).map{LatLng(it.getDouble("latitude"),it.getDouble("longitude"))}
         if(all.size>1)map?.moveCamera(CameraUpdateFactory.newLatLngBounds(org.maplibre.android.geometry.LatLngBounds.Builder().includes(all).build(),56))else map?.moveCamera(CameraUpdateFactory.newLatLngZoom(all.first(),16.0))
         positioned=true
     }}

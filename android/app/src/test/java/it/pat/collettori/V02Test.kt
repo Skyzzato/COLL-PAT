@@ -30,14 +30,14 @@ class V02Test {
     @Test fun finalPointAndUnknownNextAreDifferent(){assertEquals("Fine collettore / ramo",nextPointLabel(p("a").put("topology_end",true),emptyList(),emptyList()));assertEquals("Pozzetto successivo non definito",nextPointLabel(p("a"),emptyList(),emptyList()))}
     @Test fun sequenceUsesTopologyNotAlphabetOrNearestCoordinate(){val a=p("a").put("sequence",1);val b=p("b","ZZZ",11.005).put("sequence",2);val c=p("c","AAA",11.000001).put("sequence",3);assertTrue(nextPointLabel(a,listOf(a,b,c),emptyList()).contains("#ZZZ"))}
     @Test fun frequencyUsesCurrentSemesterWithoutChangingContract(){val c=collectorDefaults("c","C","C").put("visits_h1",4).put("visits_h2",2);assertTrue(frequencyLabel(c,Instant.parse("2026-08-01T00:00:00Z")).contains("91 giorni"));assertTrue(frequencyLabel(c,Instant.parse("2026-01-01T00:00:00Z")).contains("46 giorni"));assertEquals("Frequenza ispezione non configurata",frequencyLabel(JSONObject()))}
-    @Test fun roleNamesDoNotInventPrivileges(){assertEquals("Amministratore",roleLabel("admin"));assertEquals("Ispettore",roleLabel("inspector"));assertEquals("Non disponibile",roleLabel(null))}
+    @Test fun roleNamesDoNotInventPrivileges(){assertEquals("Amministratore",roleLabel("admin"));assertEquals("Operatore",roleLabel("inspector"));assertEquals("Non disponibile",roleLabel(null))}
     @Test fun queueDeduplicatesRetriesAndChunksButRetainsErrors(){
         fun op(id:String,kind:String,p:JSONObject)=Pending(id,"o","batch",id.length,JSONObject().put("payload",p).toString(),state="CONFLICT",kind=kind)
         val item=JSONObject().put("kind","point").put("data",p("point"));val payload=JSONObject().put("items",JSONArray(listOf(item)))
         val q=listOf(op("a","catalog_chunk",payload),op("bb","catalog",payload),op("ccc","shared_inspection",JSONObject()),op("dddd","shared_inspection",JSONObject()))
         assertEquals(setOf("catalog:point","inspection:batch"),queuedLogicalIds(q));assertEquals("1 elemento in coda di caricamento",uploadCountLabel(1));assertEquals("0 elementi in coda di caricamento",uploadCountLabel(0))
     }
-    @Test fun publicationOrderAndBuildAreCompatible(){listOf("0.1","0.11","0.12","0.13","0.14","0.15","0.16").forEach{assertTrue(compareVersions("0.2",it)>0)};assertEquals("0.21",BuildConfig.VERSION_NAME);assertTrue(BuildConfig.VERSION_CODE>17);assertTrue(compareVersions("0.21","0.2")>0)}
+    @Test fun publicationOrderAndBuildAreCompatible(){listOf("0.1","0.11","0.12","0.13","0.14","0.15","0.16").forEach{assertTrue(compareVersions("0.2",it)>0)};assertEquals("0.22",BuildConfig.VERSION_NAME);assertTrue(BuildConfig.VERSION_CODE>21);assertTrue(compareVersions("0.21","0.2")>0)}
     @Test fun nestedZipAndMissingComponentsAreDiagnosed(){
         val original=javaClass.classLoader!!.getResourceAsStream("gis/points.zip")!!.readBytes()
         fun zip(exclude:String?):ByteArray{val out=ByteArrayOutputStream();ZipOutputStream(out).use{to->ZipInputStream(original.inputStream()).use{from->while(true){val entry=from.nextEntry?:break;val data=from.readBytes();if(entry.name.endsWith(exclude?:".never"))continue;to.putNextEntry(ZipEntry("folder/"+entry.name));to.write(data);to.closeEntry()}}};return out.toByteArray()}

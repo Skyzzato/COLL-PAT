@@ -11,11 +11,11 @@ import kotlinx.coroutines.launch
     val stamp by repo.dao.settingFlow(repo.owner(),"database-last-success").collectAsState(null)
     val busy by repo.refreshing.collectAsState();val scope=rememberCoroutineScope()
     Column(Modifier.fillMaxWidth()){
-        Button(enabled=!busy&&repo.authenticated(),onClick={scope.launch{try{repo.refreshDatabase();onMessage("Database collettori e ispezioni aggiornato")}catch(e:Exception){onMessage(friendlyError(e))}}}){
+        Button(enabled=!busy&&repo.authenticated(),onClick={scope.launch{try{repo.refreshDatabase();onMessage("Database collettori e ispezioni aggiornato")}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;onMessage(friendlyError(e))}}}){
             if(busy){CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp);Spacer(Modifier.width(8.dp))}
             Text("Aggiorna database collettori")
         }
-        Text("Scarica catalogo e ispezioni condivise. Le modifiche locali restano in coda.",style=MaterialTheme.typography.bodySmall)
+        Text("Scarica catalogo e ispezioni condivise.",style=MaterialTheme.typography.bodySmall)
         Text(lastRefreshLabel(stamp),style=MaterialTheme.typography.bodySmall)
     }
 }

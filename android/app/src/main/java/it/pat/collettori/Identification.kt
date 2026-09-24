@@ -20,7 +20,7 @@ object GpsIdentification:ManholeIdentificationService {
         val lat=position?.numberOrNull("latitude")?:return empty("Posizione non disponibile")
         val lon=position.numberOrNull("longitude")?:return empty("Posizione non disponibile")
         if(!validCoordinates(lat,lon))return empty("Posizione non disponibile")
-        val elapsed=try{java.time.Duration.between(Instant.parse(position.getString("acquired_at")),Instant.now()).seconds}catch(_:Exception){return empty("Posizione da aggiornare")}
+        val elapsed=try{java.time.Duration.between(Instant.parse(position.getString("acquired_at")),Instant.now()).seconds}catch(ignored:Exception){if(ignored is kotlinx.coroutines.CancellationException)throw ignored;return empty("Posizione da aggiornare")}
         if(elapsed !in 0..60 || (position.numberOrNull("age_s")?:61.0)+elapsed>60) return empty("Posizione da aggiornare")
         if(!position.isNull("error") || position.optBoolean("mock",false))return empty("Posizione non affidabile")
         val distances=points.associate{it.getString("id") to GpsRule.distance(lat,lon,it.getDouble("latitude"),it.getDouble("longitude"))}

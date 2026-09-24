@@ -21,6 +21,7 @@ class PhotoRepository(private val repo:Repository) {
     }
     suspend fun list(visit:Visit):List<JSONObject> = repo.dao.settingValue(visit.owner,"photos:"+visit.id)?.let{JSONArray(it).objects()}?:emptyList()
     suspend fun attach(visit:Visit,source:Uri,copy:Boolean):Unit=withContext(Dispatchers.IO) {
+        repo.requireWrite()
         val uri=if(copy)newCapture() else source
         try {
             if(copy)repo.context.contentResolver.openInputStream(source).use{input->
@@ -32,9 +33,10 @@ class PhotoRepository(private val repo:Repository) {
             check(bounds.outWidth>0 && bounds.outHeight>0){"Immagine non valida"}
             repo.changePhotos(visit){photos->photos+InspectionPhoto(UUID.randomUUID().toString(),visit.id,visit.manholeId,uri.toString()).json().put("createdBy",repo.store.get()!!.getString("user_id"))}
 
-        }catch(e:Exception){repo.context.contentResolver.delete(uri,null,null);throw e}
+        }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;repo.context.contentResolver.delete(uri,null,null);throw e}
     }
     suspend fun remove(visit:Visit,photo:JSONObject) {
+        repo.requireWrite()
         repo.changePhotos(visit){photos->photos.filter{it.getString("photoId")!=photo.getString("photoId")}}
         // Preserve the file for any conserved audit revision referencing it.
     }
@@ -71,7 +73,7 @@ class PhotoRepository(private val repo:Repository) {
             update(v,p,"UPLOADED_UNCONFIRMED")
             repo.api.rpc("coll_pat_photo_uploaded",JSONObject().put("p_project",repo.project()).put("p_inspection",v.id).put("p_id",p.getString("photoId")),account)
             repo.db.withTransaction{val current=list(v);current.find{it.getString("photoId")==p.getString("photoId")}?.put("storagePath",objectPath)?.put("uploadStatus","UPLOADED");repo.dao.setting(Setting(account,"photos:"+v.id,JSONArray(current).toString()))}
-            }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){update(v,p,if(e is ApiError&&!e.retryable&&e.code!=401)"BLOCKED" else if(e is ApiError&&e.code==401)"AUTH_REQUIRED" else "PENDING",friendlyError(e))}
+            }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;update(v,p,if(e is ApiError&&!e.retryable&&e.code!=401)"BLOCKED" else if(e is ApiError&&e.code==401)"AUTH_REQUIRED" else "PENDING",friendlyError(e))}
 
         }
     }

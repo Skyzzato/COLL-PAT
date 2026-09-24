@@ -17,6 +17,7 @@ import java.time.Instant
 class SessionStore(context:Context,preferenceName:String="session"){
     private val prefs=context.getSharedPreferences(preferenceName,Context.MODE_PRIVATE)
     private val alias="collettori-session-v1"
+    val changes=kotlinx.coroutines.flow.MutableStateFlow(0L)
     private fun key():SecretKey{
         val ks=KeyStore.getInstance("AndroidKeyStore").apply{load(null)}
         if(!ks.containsAlias(alias))KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").apply{init(KeyGenParameterSpec.Builder(alias,KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())}.generateKey()
@@ -26,6 +27,7 @@ class SessionStore(context:Context,preferenceName:String="session"){
         val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key())
         val bytes=cipher.doFinal(value.toString().toByteArray())
         check(prefs.edit().putString("iv",Base64.encodeToString(cipher.iv,Base64.NO_WRAP)).putString("cipher",Base64.encodeToString(bytes,Base64.NO_WRAP)).putLong("highWater",Instant.now().toEpochMilli()).commit()){"Impossibile salvare la sessione"}
+        changes.value++
     }
     @Synchronized fun get():JSONObject?{
         val encrypted=prefs.getString("cipher",null)?:return null
@@ -34,7 +36,7 @@ class SessionStore(context:Context,preferenceName:String="session"){
         return JSONObject(String(cipher.doFinal(Base64.decode(encrypted,Base64.NO_WRAP))))
         }catch(_:java.security.GeneralSecurityException){return null}
     }
-    fun clear(){check(prefs.edit().remove("cipher").remove("iv").commit())}
+    fun clear(){check(prefs.edit().remove("cipher").remove("iv").commit());changes.value++}
     val deviceId:String get(){val old=prefs.getString("device",null);if(old!=null)return old;val id=UUID.randomUUID().toString();check(prefs.edit().putString("device",id).commit());return id}
     fun offlineAllowed(s:JSONObject):Boolean{
         val now=Instant.now();val high=prefs.getLong("highWater",0)
