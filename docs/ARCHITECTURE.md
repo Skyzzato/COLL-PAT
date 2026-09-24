@@ -1,4 +1,4 @@
-# Architettura COLL-PAT v0.2
+# Architettura COLL-PAT v0.22
 
 Compose → Repository → Room/WorkManager → Supabase Auth/RPC/Storage, con cartografia MapLibre. L'app usa solo account server. Il catalogo JSONB/PostGIS viene scaricato al login e conservato in Room per il lavoro offline; include i dati sintetici pubblicati nel progetto. Il pacchetto locale ricostruito comprende sempre la regola GPS comune, senza dipendere da un seed demo.
 
@@ -8,7 +8,7 @@ Compose → Repository → Room/WorkManager → Supabase Auth/RPC/Storage, con c
 - `Repository.kt`: modifiche locali serializzate, salvataggio atomico. Le bozze modificate sono durevoli con stato in attesa; il worker congela il payload in outbox prima dell’invio. Un invio definitivo è accodato nella stessa transazione della scheda, anche se il caricamento della bozza precedente è in corso.
 - Revisione server e contatore modifiche locali sono distinti: una ricevuta di una versione precedente non dichiara sincronizzate le modifiche locali successive. Il server usa un confronto condizionale di revisione e ricevute immutabili.
 - `PhotoRepository.kt`: file originali privati, UUID persistenti, metadati prenotati con la scheda, upload JPEG sullo stesso percorso e download autenticato su richiesta. Nessuna URL pubblica inventata.
-- `InspectionCsv.kt`: righe concluse del trimestre civile Europe/Rome, escaping CSV e salvataggio tramite SAF. Con rete aggiorna il semestre dal server, senza scaricare fotografie.
+- `InspectionCsv.kt` / `ExportPeriod.kt`: ultimo trimestre civile concluso, anno o storico intero Europe/Rome. RPC `coll_pat_export_history` con cursore UUID, pagine da 200 e revisione dello storico: se cambia tra pagine, il client non dichiara un export completo. CSV scritto progressivamente tramite SAF; recupero remoto separato dalla cache UI.
 
 Room 3 usa `(owner,id)` per le visite: due account possono conservare copie distinte della stessa bozza, incluso lavoro non inviato. Le migrazioni 1→2→3 preservano i dati. Gli invii del vecchio protocollo sono conservati per recupero esplicito.
 
@@ -23,3 +23,13 @@ Il DAO legge i JSON grandi di catalogo, pacchetti, impostazioni e outbox in porz
 L'ordine di pubblicazione registra esplicitamente 0.2 dopo 0.16 (build 17); il nome visibile non viene riscritto. La stessa regola è applicata da `compareVersions` e `coll_pat.version_parts`.
 
 La v0.15 aggiunge GpsWindow/LocationCapture per le misure mediate e SaveFeedback per il timer monotono di due secondi. Il modulo è sovrapposto alla pagina precedente, mantenuta viva con filtri e scroll; chiuderlo conserva la cronologia reale. Un esplicito Salva bozza scrive scheda e outbox nella stessa transazione. La sincronizzazione appartiene al worker, non alla schermata.
+
+## Evoluzione v0.22
+
+`ManualConnections` materializza i collegamenti scelti in segmenti schematici, sotto il mutex catalogo e nella stessa transazione Room dell'outbox. UUID derivato da collettore e coppia non ordinata; nessun verso idraulico dedotto dalla distanza. Il worker mantiene ricevute e dipendenze preesistenti.
+
+`SessionStore.changes` rende osservabile il ruolo verificato. Ruolo reale e simulazione di sessione sono separati; `requireWrite` impedisce nuove mutazioni in anteprima. Le code precedenti usano il ruolo reale corrente. Le RPC riesaminano la membership dopo il lock progetto, anche prima di restituire ricevute di retry.
+
+Le preferenze sono aggiornate subito nello stato e scritte in sequenza nello scope del repository. Il salvataggio di catalogo, bozza, invio, aspetto ed eliminazione espliciti sopravvive alla schermata. I risultati UI aspettano solo finché la schermata è attiva; CancellationException risale senza diventare un messaggio di errore.
+
+[Ruoli e funzionalità v0.22](REPORT-v0.22.md) · [Migrazione e verifiche remote](MIGRATIONS-v0.22.md).

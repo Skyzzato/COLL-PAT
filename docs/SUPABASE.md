@@ -1,8 +1,10 @@
-# Supabase — COLL-PAT v0.2
+# Supabase — COLL-PAT v0.22
+
+La configurazione attuale è descritta in [MIGRATIONS-v0.22](MIGRATIONS-v0.22.md). La 010 introduce viewer, registro richieste, gestione utenti protetta e export paginato. Le sezioni seguenti conservano il contesto storico; le policy Storage correnti permettono la cancellazione solo dei lavori autorizzati e richiedono inspector/admin per ogni scrittura.
 
 ## Aggiornamento v0.21
 
-Le nuove migrazioni 008 e 009 e la pulizia separata sono descritte in [MIGRATIONS-v0.21](MIGRATIONS-v0.21.md). Sono state applicate solo in test locale. Le policy DELETE/SELECT per gli allegati autorizzano esclusivamente i lavori di cancellazione confermati dal progetto.
+Le nuove migrazioni 008 e 009 e la pulizia separata sono descritte in [MIGRATIONS-v0.21](MIGRATIONS-v0.21.md). Sono state applicate anche sul server remoto: [DEPLOYMENT-v0.21](DEPLOYMENT-v0.21.md). Le policy DELETE/SELECT per gli allegati autorizzano esclusivamente i lavori di cancellazione confermati dal progetto.
 
 ## Documentazione delle versioni precedenti
 

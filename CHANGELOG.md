@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.22 — ergonomia, collegamenti e ruoli (prerelease)
+
+- Ereditarietà per proprietà e aggiornamento delle sorgenti mappa, preferenze salvate dal repository anche dopo cambio pagina.
+- Pozzetti vicini ordinati per distanza, collegamenti schematici multipli con identità stabili e commit locale atomico. Posizionamento con rete esistente e bandierina separata.
+- Card compatte, azioni ordinate, importazione lazy, contesto storico esplicito, filtri unificati e Slider GPS senza cambio delle soglie.
+- Export CSV completo e paginato per trimestre concluso, anno e tutto lo storico, confini Europe/Rome, deduplica e marcatura dei dati locali/sintetici.
+- Viewer di sola lettura, etichetta Operatore per inspector, controlli server sulle scritture e sulle ricevute dopo revoca. Simulazione admin senza nuove scritture.
+- Registro delle richieste COLL-PAT, gestione utenti paginata, confronto del ruolo precedente, audit e lock transazionale per ultimo amministratore.
+- Cancellazione coroutine propagata; salvataggi espliciti durevoli; portrait con target SDK 36 conservato.
+- Dataset Barbaniga inventato di 5.000 m: 126 pozzetti e 125 tronchi, caricamento e rimozione amministrativi espliciti.
+- Migrazione incrementale 010, Room 3 invariata, application ID e firma conservati, APK 0.22/build 22. [Resoconto](docs/REPORT-v0.22.md), [collaudo](docs/VALIDATION-v0.22.md).
+
 ## v0.21 — ciclo di vita, GPS e lavoro offline (prerelease)
 
 - Eliminazione definitiva con ambito confermato, tombstone tecnici, ricevute senza payload eliminati e pulizia allegati riprendibile; reimportazione della stessa sorgente con nuovo ciclo UUID.
